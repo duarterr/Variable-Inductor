@@ -7,10 +7,10 @@ Topology: E-core with multi-bobbin 3D-printed coil formers
 
 Air-gap conventions
 -------------------
-  · Outer-leg gap (lg_outer) : ADDITIVE — represents a non-ideal separation
+  · Outer-leg gap (lg_outer) : ADDITIVE - represents a non-ideal separation
     between the two core halves (e.g. surface roughness, assembly tolerance).
     It does not affect the outer-leg magnetic path length.
-  · Centre-leg gap (lg_center): SUBTRACTIVE — a physical material removed from
+  · Centre-leg gap (lg_center): SUBTRACTIVE - a physical material removed from
     the centre leg, reducing its effective magnetic path length.
 
 Usage
@@ -28,6 +28,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
+from matplotlib.patches import Rectangle, Circle
 
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
@@ -261,21 +262,39 @@ def _ask_yn(prompt, default=True):
 
 def _pick_core(AeAw_rec_mm4=None):
     """
-    Show cores with AeAw info. If AeAw_rec_mm4 is given, mark which ones qualify.
-    d[0]=Core_L, d[1]=Core_W, d[2]=Core_H, d[3]=Center_W, d[4]=Outer_Sep, d[5]=Window_L
+    Show cores with AeAw info. If AeAw_rec_mm4 is given, mark which ones qualify
+    and default to the smallest core that still meets the AeAw requirement.
     """
     from data.core_db import coil_former_W, coil_former_L
 
     names = list(CORES.keys())
-    default_name = "E 40/16/12 TDK"
+    SP, TH = 0.25, 0.75  # display defaults for spacing and thickness
+
+    # -- Find the best default core -------------------------------------------
+    # Among all cores that meet AeAw >= AeAw_rec_mm4, pick the one with the
+    # smallest AeAw (most compact core that still satisfies the requirement).
+    # Fall back to the first core in the database if none qualify.
+    default_name = names[0]
+    if AeAw_rec_mm4:
+        qualifying = []
+        for n in names:
+            Ae_c_mm2 = core_W(n, "center") * core_H(n)
+            cfw_mm = coil_former_W(n, "half", SP, TH)
+            cfl_mm = coil_former_L(n, "full", SP, TH)
+            Aw_mm2 = cfw_mm * cfl_mm
+            AeAw = Ae_c_mm2 * Aw_mm2
+            if AeAw >= AeAw_rec_mm4:
+                qualifying.append((AeAw, n))
+        if qualifying:
+            default_name = min(qualifying, key=lambda x: x[0])[1]
+
     default_idx = names.index(default_name) + 1
 
+    # -- Print header ----------------------------------------------------------
     if AeAw_rec_mm4:
         print(f"  AeAw required : {AeAw_rec_mm4:.0f} mm4")
         print("  Available cores in database (already adjusted for winding span):")
 
-    # Column headers - use sp=0.25, th=0.75 as display defaults
-    SP, TH = 0.25, 0.75
     hdr = (
         f"    {'#':>3}  {'Name':22s}  "
         f"{'Ae_c':>6}  {'Ae_o':>6}  {'Ae_h':>6}  "
@@ -285,8 +304,9 @@ def _pick_core(AeAw_rec_mm4=None):
     )
     print(hdr)
     print("  " + "-" * (len(hdr) - 2))
+
+    # -- Print each core -------------------------------------------------------
     for i, n in enumerate(names, 1):
-        # Use the verified core_db functions - same formulas as run_interactive
         Ae_c_mm2 = core_W(n, "center") * core_H(n)
         Ae_o_mm2 = core_W(n, "outer") * core_H(n)
         Ae_h_mm2 = core_h_L(n) * core_H(n)
@@ -297,13 +317,19 @@ def _pick_core(AeAw_rec_mm4=None):
         Aw_mm2 = cfw_mm * cfl_mm
         AeAw = Ae_c_mm2 * Aw_mm2
         ok_str = ("OK" if AeAw >= AeAw_rec_mm4 else "--") if AeAw_rec_mm4 else ""
+
+        # Mark the default core with an arrow so the user can spot it easily
+        marker = ">" if n == default_name else " "
+
         print(
-            f"    [{i:>2}]  {n:22s}  "
+            f"  {marker} [{i:>2}]  {n:22s}  "
             f"{f'{Ae_c_mm2:.0f}mm2':>6}  {f'{Ae_o_mm2:.0f}mm2':>6}  {f'{Ae_h_mm2:.0f}mm2':>6}  "
             f"{f'{le_c_mm:.1f}mm':>6}  {f'{le_h_mm:.1f}mm':>6}  "
             f"{f'{cfw_mm:.1f}mm':>6}  {f'{cfl_mm:.1f}mm':>6}  "
             f"{f'{Aw_mm2:.1f}mm2':>7}  {f'{AeAw:.0f}mm4':>8}  {ok_str:>4}"
         )
+
+    # -- Prompt user -----------------------------------------------------------
     idx = _ask(
         "Choose core number",
         default_idx,
@@ -957,7 +983,9 @@ def _svg2rlg_compat(path, font_size=15, replacements=None):
     return drawing
 
 
-def generate_report(design, dc_plot_path, ac_plot_path, out_path):
+def generate_report(
+    design, dc_plot_path, ac_plot_path, ww_ac_path, ww_bias_path, out_path
+):
     doc = SimpleDocTemplate(
         out_path,
         pagesize=A4,
@@ -1163,7 +1191,6 @@ def generate_report(design, dc_plot_path, ac_plot_path, out_path):
     story.append(PageBreak())
 
     # -- Device drawings -------------------------------------------------------
-
     story.append(P("Device drawings", "h2"))
 
     _data_dir = os.path.join(os.path.dirname(__file__), "data")
@@ -1229,7 +1256,6 @@ def generate_report(design, dc_plot_path, ac_plot_path, out_path):
     story.append(PageBreak())
 
     # -- Ac winding ------------------------------------------------------------
-
     story.append(P("Ac Winding (Centre Leg)", "h2"))
     data = rows_to_para(
         [
@@ -1266,6 +1292,91 @@ def generate_report(design, dc_plot_path, ac_plot_path, out_path):
         ]
     )
     story.append(_styled_table(data, cw4))
+    story.append(PageBreak())
+
+    # -- Cross sections --------------------------------------------------------
+    story.append(P("Winding cross sections", "h2"))
+
+    if os.path.exists(ww_ac_path) and os.path.exists(ww_bias_path):
+        col_w = Wb / 3 - 3 * mm
+
+        def _scaled_image(path, width):
+            from PIL import Image as PILImage
+
+            with PILImage.open(path) as im:
+                orig_w, orig_h = im.size
+            scale = width / orig_w
+            return Image(path, width=width, height=orig_h * scale)
+
+        img_ac = _scaled_image(ww_ac_path, col_w)
+        img_bias = _scaled_image(ww_bias_path, col_w)
+
+        # Calcular número de layers
+        from math import ceil
+
+        CF_W_mm = d["CF_W_mm"]
+        CF_L_mm = d["CF_L_mm"]
+
+        import math
+
+        d_ac_mm = math.sqrt(4 * d["S_AWG_total_mm2"] * 1e-6 / math.pi) * 1e3
+        d_bias_mm = math.sqrt(4 * d["S_bias_total_mm2"] * 1e-6 / math.pi) * 1e3
+
+        max_cols_ac = int(CF_W_mm / d_ac_mm)
+        max_cols_bias = int(CF_W_mm / d_bias_mm)
+
+        total_ac = d["N_ac"] * d["N_cond"]
+        total_bias = (d["N_bias"] // 2) * d["N_cond_bias"]
+
+        layers_ac = ceil(total_ac / max(int(CF_L_mm / d_ac_mm), 1))
+        layers_bias = ceil(total_bias / max(int(CF_L_mm / d_bias_mm), 1))
+
+        label_ac = (
+            f"<b>AC winding</b> - {d['N_ac']}T x {d['N_cond']} x AWG{d['AWG']}<br/>"
+            f"{layers_ac} layer{'s' if layers_ac > 1 else ''}  |  "
+            f"k<sub>w</sub> = {d['kw_req']*100:.1f}%"
+        )
+        label_bias = (
+            f"<b>Bias winding</b> (per leg) - {d['N_bias']//2}T x {d['N_cond_bias']} x AWG{d['AWG_bias']}<br/>"
+            f"{layers_bias} layer{'s' if layers_bias > 1 else ''}  |  "
+            f"k<sub>w</sub> = {d['kw_req_bias']*100:.1f}%"
+        )
+
+        S_cap = ParagraphStyle(
+            "cap",
+            fontSize=8,
+            fontName="Helvetica",
+            alignment=1,
+            textColor=colors.HexColor("#2c3e50"),
+            spaceAfter=3,
+        )
+
+        ww_table = Table(
+            [
+                [
+                    Paragraph(label_ac, S_cap),
+                    Spacer(1, 1),
+                    Paragraph(label_bias, S_cap),
+                ],
+                [img_ac, Spacer(1, 1), img_bias],
+            ],
+            colWidths=[col_w + 3 * mm, 20 * mm, col_w + 3 * mm],
+        )
+        ww_table.setStyle(
+            TableStyle(
+                [
+                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                    ("TOPPADDING", (0, 0), (-1, -1), 3),
+                ]
+            )
+        )
+        story.append(ww_table)
+
+    story.append(PageBreak())
 
     # -- Operating point -------------------------------------------------------
     story.append(P("Operating Points", "h2"))
@@ -1282,7 +1393,6 @@ def generate_report(design, dc_plot_path, ac_plot_path, out_path):
         ]
     )
     story.append(_styled_table(data, cw4))
-    story.append(PageBreak())
 
     # -- Reluctances at I_bias=0 -----------------------------------------------
     story.append(P("Reluctance Network at I_bias=0 (A·t/Wb)", "h2"))
@@ -1711,6 +1821,141 @@ def plot_ac_analysis(design, save_path, Iac_fractions=None, n_points=300):
 
 
 # -----------------------------------------------------------------------------
+# WINDING WINDOW CROSS-SECTION
+# -----------------------------------------------------------------------------
+
+
+def draw_winding_window(
+    CF_W_mm, CF_L_mm, S_total_m2, N_turns, N_cond, thickness, spacing, title=""
+):
+    """
+    Draw a cross-section of the coil former window with conductors packed in rows.
+    """
+    d = np.sqrt(4 * S_total_m2 / np.pi) * 1e3  # wire diameter (mm)
+
+    # Max capacity limits
+    max_rows = int(CF_L_mm / d)
+    max_cols = int(CF_W_mm / d)
+    total_needed = N_turns * N_cond
+
+    aspect = CF_L_mm / max(CF_W_mm, 1e-6)
+    fig_w = 2.0
+    fig, ax = plt.subplots(figsize=(fig_w, fig_w * aspect + 1.2))
+
+    # 1. Window background
+    ax.add_patch(Rectangle((0, 0), CF_W_mm, CF_L_mm, facecolor="#EEEEEE", zorder=1))
+
+    # 2. Core Block (Black)
+    x_core = -(thickness + spacing + thickness)
+    ax.add_patch(
+        Rectangle(
+            (x_core, -thickness),
+            thickness,
+            CF_L_mm + 2 * thickness,
+            facecolor="black",
+            zorder=3,
+        )
+    )
+    ax.text(
+        x_core + thickness / 2,
+        CF_L_mm / 2,
+        "Core",
+        color="white",
+        fontsize=8,
+        fontweight="bold",
+        ha="center",
+        va="center",
+        rotation=90,
+        zorder=4,
+    )
+
+    # 3. Spacing (White)
+    x_spacing = -(thickness + spacing)
+    ax.add_patch(
+        Rectangle(
+            (x_spacing, -thickness),
+            spacing,
+            CF_L_mm + 2 * thickness,
+            facecolor="white",
+            zorder=2,
+        )
+    )
+
+    # 4. Former borders (Grey)
+    ax.add_patch(
+        Rectangle(
+            (-thickness, -thickness),
+            thickness,
+            CF_L_mm + 2 * thickness,
+            facecolor="#4D4D4D",
+            zorder=3,
+        )
+    )
+    ax.add_patch(
+        Rectangle((0, -thickness), CF_W_mm, thickness, facecolor="#4D4D4D", zorder=3)
+    )
+    ax.add_patch(
+        Rectangle((0, CF_L_mm), CF_W_mm, thickness, facecolor="#4D4D4D", zorder=3)
+    )
+
+    # 5. Conductors Logic - Filling Column by Column with equal vertical distribution
+    count = 0
+    cols_used = 0
+
+    for col in range(max_cols):
+        if count >= total_needed:
+            break
+
+        # Determine how many conductors go into THIS specific column
+        remaining = total_needed - count
+        cond_in_this_col = min(remaining, max_rows)
+
+        # Calculate pitch for this specific column to distribute them along CF_L_mm
+        if cond_in_this_col > 1:
+            current_y_pitch = (CF_L_mm - d) / (cond_in_this_col - 1)
+        else:
+            current_y_pitch = 0  # Will be centered
+
+        cols_used += 1
+        for row in range(cond_in_this_col):
+            x = d / 2 + col * d
+
+            # Vertical position: centered if 1 cond, distributed if more
+            if cond_in_this_col > 1:
+                y = d / 2 + row * current_y_pitch
+            else:
+                y = CF_L_mm / 2
+
+            ax.add_patch(
+                Circle(
+                    (x, y),
+                    d / 2,
+                    linewidth=0.4,
+                    edgecolor="#1a252f",
+                    facecolor="#3498db",
+                    alpha=0.85,
+                    zorder=2,
+                )
+            )
+            count += 1
+
+    # Axis and Ticks
+    ax.set_xlim(x_core, CF_W_mm)
+    ax.set_ylim(-thickness, CF_L_mm + thickness)
+    ax.set_aspect("equal")
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+
+    ax.set_xticks([0, CF_W_mm])
+    ax.set_yticks([0, CF_L_mm])
+    ax.set_xlabel("Width (mm)", fontsize=9)
+    ax.set_ylabel("Height (mm)", fontsize=9)
+
+    fig.tight_layout()
+    return fig
+
+
+# -----------------------------------------------------------------------------
 # ENTRY POINT
 # -----------------------------------------------------------------------------
 
@@ -1733,12 +1978,49 @@ if __name__ == "__main__":
     ac_plot_path = os.path.join(out_dir, "Lac_vs_Ibias.png")
     plot_ac_analysis(design, ac_plot_path, Iac_fractions=Iac_fractions, n_points=300)
 
+    # -- Winding window cross-section ------------------------------------------
+    _sec("Winding window cross-section")
+    fig_ww = draw_winding_window(
+        design["CF_W_mm"],
+        design["CF_L_mm"],
+        float(design["S_AWG_total_mm2"]) * 1e-6,
+        design["N_ac"],
+        design["N_cond"],
+        design["thickness_mm"],
+        design["spacing_mm"],
+        title=f"AC winding  -  {design['N_ac']}Tx{design['N_cond']}xAWG{design['AWG']}",
+    )
+    ww_ac_path = os.path.join(out_dir, "winding_window_ac.png")
+    fig_ww.savefig(ww_ac_path, dpi=300, bbox_inches="tight")
+    plt.close(fig_ww)
+    print(f"  Saved -> {ww_ac_path}")
+
+    # For Bias, we use N_bias/2 (since it's per leg) and its specific wire data
+    fig_bias = draw_winding_window(
+        design["CF_W_mm"],
+        design["CF_L_mm"],
+        float(design["S_bias_total_mm2"]) * 1e-6,
+        int(design["N_bias"] / 2),
+        design["N_cond_bias"],
+        design["thickness_mm"],
+        design["spacing_mm"],
+        title=f"BIAS winding - {int(design['N_bias']/2)}Tx{design['N_cond_bias']}xAWG{design['AWG_bias']}",
+    )
+    ww_bias_path = os.path.join(out_dir, "winding_window_bias.png")
+    fig_bias.savefig(ww_bias_path, dpi=300, bbox_inches="tight")
+    plt.close(fig_bias)
+    print(f"  Saved -> {ww_bias_path}")
+
+    # -- PDF report ------------------------------------------------------------
+
     print()
     if _ask_yn("Generate PDF report?", default=True):
         ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         pdf_path = os.path.join(out_dir, f"inductor_report_{ts}.pdf")
         _sec("Generating PDF report")
-        generate_report(design, dc_plot_path, ac_plot_path, pdf_path)
+        generate_report(
+            design, dc_plot_path, ac_plot_path, ww_ac_path, ww_bias_path, pdf_path
+        )
     else:
         print("  Report skipped.")
 
