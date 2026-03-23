@@ -57,23 +57,23 @@ The tool presents an interactive console where you can review and override defau
 
 ## Design Parameters
 
-| Parameter | Default | Description |
-|---|---|---|
-| `L_nom_uH` | 260 µH | Nominal inductance at zero bias current |
-| `L_min_uH` | 65 µH | Minimum inductance at maximum bias current |
-| `f_sw_kHz` | 100 kHz | Switching frequency |
-| `I_rms_A` | 4.5 A | RMS current |
-| `I_pk_A` | 5.0 A | Peak current |
-| `B_max_T` | 0.35 T | Maximum flux density at peak current |
-| `I_bias_max_A` | 1.0 A | Maximum bias current |
-| `kw` | 0.70 | Coil former fill factor |
-| `J_max_Acm2` | 450 A/cm² | Maximum current density |
-| `coil_length` | `"full"` | Winding span: `"full"` or `"half"` |
-| `spacing_mm` | 0.25 mm | Core-to-former clearance |
-| `thickness_mm` | 0.75 mm | Former wall thickness |
-| `lg_outer_mm` | 0.1 mm | Outer-leg air gap |
-| `kf_outer` | 1.00 | Fringing factor for outer-leg gaps |
-| `kf_center` | 1.06 | Fringing factor for centre-leg gap |
+| Parameter  | Description |
+|---|---|
+| `L_nom_uH` | Nominal inductance at zero bias current |
+| `L_min_uH` | Minimum inductance at maximum bias current |
+| `f_sw_kHz` | Switching frequency |
+| `I_rms_A` | RMS current |
+| `I_pk_A` | Peak current |
+| `B_max_T` | Maximum flux density at peak current |
+| `I_bias_max_A` | Maximum bias current |
+| `kw`| Coil former fill factor |
+| `J_max_Acm2` | Maximum current density |
+| `coil_length` | Winding span: `"full"` or `"half"` |
+| `spacing_mm` | Core-to-former clearance |
+| `thickness_mm` | Former wall thickness |
+| `lg_outer_mm` | Outer-leg air gap |
+| `kf_outer` | Fringing factor for outer-leg gaps |
+| `kf_center` | Fringing factor for centre-leg gap |
 
 ## Output
 
@@ -84,6 +84,32 @@ The tool generates a PDF report containing:
 - Magnetic operating point (flux density, permeability)
 - Inductance vs. bias current curve
 - BH curve of the selected core material
+
+## 3D-Printed Coil Formers
+
+The file [`3d_print/coil_formers.f3d`](3d_print/coil_formers.f3d) is a parametric Fusion 360 model that generates coil formers (bobbins) ready for 3D printing.
+
+The model is driven entirely by the standard dimensions found in TDK's EE-core datasheets — no manual geometry editing is required. To adapt the former to a different core, open the file in Fusion 360, go to **Modify → Change Parameters**, and update the following user parameters:
+
+| Parameter | Datasheet dimension | Description |
+|---|---|---|
+| `Core_L` | *A* (or *L*) | Total core length — long axis, across all three legs |
+| `Core_W` | *B* (or *W*) | Total core width — short axis, determines leg height |
+| `Core_H` | *C* (or *H*) | Core depth / stack height |
+| `Center_W` | *F* | Centre-leg width |
+| `Outer_Sep` | *E* | Centre-to-centre span between the inner faces of the two outer legs |
+| `Window_L` | *D* | Winding window length |
+
+These are the same parameters used in [`data/core_db.py`](data/core_db.py). Once the parameters are updated, Fusion 360 regenerates the geometry automatically.
+
+The model supports two winding span configurations, controlled by a separate parameter:
+
+| Configuration | Description |
+|---|---|
+| `"full"` | Single bobbin spanning the full window — one winding per outer leg |
+| `"half"` | Window split in two — two half-width bobbins per outer leg, for bifilar or split windings |
+
+Wall thickness and core-to-former clearance are also exposed as parameters (`thickness`, `spacing`), matching the values used in the Python design tool.
 
 ## Author
 
