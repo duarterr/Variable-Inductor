@@ -1,0 +1,5 @@
+numpy
+matplotlib
+reportlab
+scipy
+svglib
