@@ -70,22 +70,22 @@ import tempfile
 
 DEFAULTS = {
     # Inductance targets
-    "L_nom_uH": 260.0,  # Nominal inductance (uH, @ I_bias=0)
-    "L_min_uH": 65.0,  # Minimal inductance (uH, @ I_bias_max)
+    "L_nom_uH": 60.0,  # Nominal inductance (uH, @ I_bias=0)
+    "L_min_uH": 60 * 0.25,  # Minimal inductance (uH, @ I_bias_max)
     # Electrical specifications
     "f_sw_kHz": 100.0,  # Switching frequency (kHz)
-    "I_rms_A": 4.5,  # RMS current (A)
-    "I_pk_A": 5.0,  # Peak current (A)
+    "I_rms_A": 1.3,  # RMS current (A)
+    "I_pk_A": 3.4,  # Peak current (A)
     "B_max_T": 0.35,  # Max flux density (T @ I_pk)
-    "I_bias_max_A": 1.0,  # Max bias current (A)
+    "I_bias_max_A": 0.5,  # Max bias current (A)
     # Wire / thermal
     "kw": 0.70,  # Coil former fill factor
     "J_max_Acm2": 450.0,  # Max current density (A/cm2)
     # Mechanical
-    "coil_length": "full",  # Winding span: "full" or "half"
+    "coil_length": "half",  # Winding span: "full" or "half"
     "spacing_mm": 0.25,  # Core-to-former clearance (mm)
     "thickness_mm": 0.75,  # Former wall thickness (mm)
-    "lg_outer_mm": 0.1,  # Outer-leg air gap (mm)
+    "lg_outer_mm": 0.01,  # Outer-leg air gap (mm)
     "kf_outer": 1.0,  # Fringing factor for outer-leg gaps
     "kf_center": 1.06,  # Fringing factor for centre-leg gap
 }
@@ -1219,7 +1219,9 @@ def generate_report(design, dc_plot_path, ac_plot_path, out_path):
             "tolerance) and does not affect the outer-leg magnetic path length. "
             "The centre-leg gap (lg_center) is <i>subtractive</i>. It corresponds to "
             "material physically removed from the centre leg, reducing its effective "
-            "magnetic path length.",
+            "magnetic path length. The values shown in the figure are nominal values, "
+            "calculated based on the core geometry. For the reluctance and inductance calculations,"
+            "lg_center whill be deducted from le_center ",
             "note",
         )
     )
