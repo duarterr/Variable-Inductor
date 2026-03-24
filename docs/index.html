@@ -1,0 +1,972 @@
+<!-- TODO: FIGURAS ajeitadas -->
+
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Variable Inductor Design Tool</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+  <div id="g-tooltip"></div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+     HEADER
+════════════════════════════════════════════════════════════════════════ -->
+  <header id="app-header">
+    <h1>Variable Inductor Design Tool</h1>
+    <span class="subtitle">E-core · Multi-bobbin · Nonlinear BH model</span>
+  </header>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+     MAIN LAYOUT
+════════════════════════════════════════════════════════════════════════ -->
+  <div id="app-layout">
+
+    <!-- ╔══════════════════════════════════════════════════════════
+       LEFT COLUMN - Design inputs
+  ══════════════════════════════════════════════════════════════╗ -->
+    <aside id="left-panel" class="panel">
+      <div class="panel-header">Design Parameters</div>
+      <div class="panel-body">
+        <div class="form-columns">
+
+          <!-- ── Column 1: Inductance + Electrical + Material ── -->
+          <div class="form-col">
+
+            <!-- 1 · Inductance targets -->
+            <div class="form-section">
+              <div class="section-title">1 · Inductance targets</div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="L_main_nom_uH"
+                    data-tip="Target inductance at zero bias current - the nominal operating point of the main winding.">L<sub>nom</sub>
+                    @ I<sub>bias</sub>=0 <span class="unit">(μH)</span></label>
+                  <input type="number" id="L_main_nom_uH" value="60" min="0.1" step="1" />
+                </div>
+                <div class="form-group">
+                  <label for="L_main_min_uH"
+                    data-tip="Minimum inductance when bias current is at its maximum - sets how much the outer legs must saturate.">L<sub>min</sub>
+                    @ I<sub>bias,max</sub> <span class="unit">(μH)</span></label>
+                  <input type="number" id="L_main_min_uH" value="6" min="0.1" step="1" />
+                </div>
+              </div>
+            </div>
+
+            <!-- 2 · Electrical specs -->
+            <div class="form-section">
+              <div class="section-title">2 · Electrical specifications</div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="f_sw_kHz"
+                    data-tip="Converter switching frequency. Used to compute skin-effect wire size limit.">f<sub>sw</sub>
+                    <span class="unit">(kHz)</span></label>
+                  <input type="number" id="f_sw_kHz" value="100" min="1" step="1" />
+                </div>
+                <div class="form-group">
+                  <label for="I_bias_max_A"
+                    data-tip="Maximum DC current through the bias (outer-leg) winding. Determines the required N_bias and wire gauge.">I<sub>bias,max</sub>
+                    <span class="unit">(A)</span></label>
+                  <input type="number" id="I_bias_max_A" value="0.5" min="0.01" step="0.1" />
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="I_main_rms_A"
+                    data-tip="RMS current through the main winding. Used for conductor cross-section (ampacity) sizing.">I<sub>rms</sub>
+                    <span class="unit">(A)</span></label>
+                  <input type="number" id="I_main_rms_A" value="1.3" min="0.01" step="0.1" />
+                </div>
+                <div class="form-group">
+                  <label for="I_main_pk_A"
+                    data-tip="Peak current through the main winding. Used to compute peak flux density and verify B ≤ B_max.">I<sub>pk</sub>
+                    <span class="unit">(A)</span></label>
+                  <input type="number" id="I_main_pk_A" value="3.4" min="0.01" step="0.1" />
+                </div>
+              </div>
+              <div class="form-row single">
+                <div class="form-group">
+                  <label for="B_main_max_T"
+                    data-tip="Maximum allowed flux density in the centre leg at peak current. Typical MnZn limit: 0.3-0.4 T.">B<sub>max</sub>
+                    @ I<sub>pk</sub> <span class="unit">(T)</span></label>
+                  <input type="number" id="B_main_max_T" value="0.35" min="0.01" max="0.6" step="0.01" />
+                </div>
+              </div>
+            </div>
+
+            <!-- 3 · Material -->
+            <div class="form-section">
+              <div class="section-title">3 · Core material</div>
+              <div class="form-row single">
+                <div class="form-group">
+                  <label for="mat_name"
+                    data-tip="Core material. Selects the nonlinear BH model parameters (k1, k2, k3) used throughout the magnetic circuit solver.">Material</label>
+                  <select id="mat_name">
+                    <option value="N87 (TDK)">N87 (TDK) - μ_i=2200, MnZn ~100 kHz</option>
+                    <option value="User-defined">User-defined</option>
+                  </select>
+                </div>
+              </div>
+              <div id="material-presets" class="form-row triple">
+                <div class="form-group">
+                  <label>k1 <span class="unit">(H/m)</span></label>
+                  <span id="disp-k1" class="info-badge">0.062</span>
+                </div>
+                <div class="form-group">
+                  <label>k2 <span class="unit">(T⁻²)</span></label>
+                  <span id="disp-k2" class="info-badge">42.995</span>
+                </div>
+                <div class="form-group">
+                  <label>k3 <span class="unit">(H/m)</span></label>
+                  <span id="disp-k3" class="info-badge">302.904</span>
+                </div>
+              </div>
+              <div id="material-custom" style="display:none">
+                <div class="form-row triple">
+                  <div class="form-group">
+                    <label for="k1">k1 <span class="unit">(H/m)</span></label>
+                    <input type="number" id="k1" value="0.062" step="any" />
+                  </div>
+                  <div class="form-group">
+                    <label for="k2">k2 <span class="unit">(T⁻²)</span></label>
+                    <input type="number" id="k2" value="42.995" step="any" />
+                  </div>
+                  <div class="form-group">
+                    <label for="k3">k3 <span class="unit">(H/m)</span></label>
+                    <input type="number" id="k3" value="302.904" step="any" />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div><!-- /col 1 -->
+
+          <!-- ── Column 2: Wire/thermal + Mechanical ── -->
+          <div class="form-col">
+
+            <!-- 4 · Wire / thermal -->
+            <div class="form-section">
+              <div class="section-title">4 · Wire / thermal</div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="kw"
+                    data-tip="Winding window fill factor - ratio of copper area to total window area. π/4 ≈ 0.785 is typical for round wire with perfect fill.">Fill
+                    factor k<sub>w</sub></label>
+                  <input type="number" id="kw" value="0.7854" min="0.1" max="1.0" step="0.01" />
+                </div>
+                <div class="form-group">
+                  <label for="J_max_Acm2"
+                    data-tip="Maximum allowed current density in the conductors. 300-500 A/cm² is typical.">J<sub>max</sub>
+                    <span class="unit">(A/cm²)</span></label>
+                  <input type="number" id="J_max_Acm2" value="450" min="50" step="10" />
+                </div>
+              </div>
+            </div>
+
+            <!-- 5 · Mechanical -->
+            <div class="form-section">
+              <div class="section-title">5 · Mechanical / coil former</div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="coil_length"
+                    data-tip="Half: one E + one I core (bobbin spans one window). Full: two E cores (bobbin spans both halves of the window).">Winding
+                    span</label>
+                  <select id="coil_length">
+                    <option value="half">Half - E+I set</option>
+                    <option value="full">Full - E+E set</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="spacing_mm"
+                    data-tip="Air gap between the core leg surface and the coil former wall. Provides electrical clearance and accounts for assembly tolerance.">Clearance
+                    <span class="unit">(mm)</span></label>
+                  <input type="number" id="spacing_mm" value="0.25" min="0" step="0.05" />
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="thickness_mm"
+                    data-tip="Thickness of the coil former wall and flanges. Determines the effective winding window available for conductors.">Wall
+                    thickness <span class="unit">(mm)</span></label>
+                  <input type="number" id="thickness_mm" value="0.75" min="0.1" step="0.05" />
+                </div>
+                <div class="form-group">
+                  <label for="lg_outer_mm"
+                    data-tip="Additive air gap on each outer leg - models non-ideal core-half separation (surface roughness, assembly tolerance). Does not reduce magnetic path length.">lg<sub>outer</sub>
+                    <span class="unit">(mm)</span></label>
+                  <input type="number" id="lg_outer_mm" value="0.01" min="0" step="0.005" />
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="kf_outer"
+                    data-tip="Fringing factor for the outer-leg gap. Accounts for flux fringing around the gap edges. Typically 1.0-1.1.">kf<sub>outer</sub></label>
+                  <input type="number" id="kf_outer" value="1.0" min="0.5" step="0.01" />
+                </div>
+                <div class="form-group">
+                  <label for="kf_center"
+                    data-tip="Fringing factor for the centre-leg gap. Accounts for flux fringing. Slightly above 1.0 for small gaps; increases with gap length.">kf<sub>center</sub></label>
+                  <input type="number" id="kf_center" value="1.06" min="0.5" step="0.01" />
+                </div>
+              </div>
+            </div>
+
+            <!-- 6 · Core selection -->
+            <div class="form-section">
+              <div class="section-title">6 · Core selection</div>
+              <div class="form-row single">
+                <div class="form-group">
+                  <label for="core_name"
+                    data-tip="E-core geometry from the database. The AeAw product and coil former dimensions are derived from the selected core.">Core</label>
+                  <select id="core_name">
+                    <!-- populated by JS -->
+                  </select>
+                </div>
+              </div>
+              <div id="core-info" class="hint" style="margin-top:4px;"></div>
+            </div>
+
+          </div><!-- /col 2 -->
+
+          <!-- ── Column 3: Mode + Parameters + Wire ── -->
+          <div class="form-col">
+
+            <!-- 7 · Design mode -->
+            <div class="form-section">
+              <div class="section-title">7 · Design mode</div>
+              <div class="radio-group">
+                <label>
+                  <input type="radio" name="design_mode" value="1" checked />
+                  Mode 1 - Fix N<sub>main</sub>, solve lg<sub>center</sub>
+                </label>
+              </div>
+              <div class="radio-group">
+                <label>
+                  <input type="radio" name="design_mode" value="2" />
+                  Mode 2 - Fix lg<sub>center</sub>, solve N<sub>main</sub>
+                </label>
+              </div>
+              <div class="radio-group">
+                <label>
+                  <input type="radio" name="design_mode" value="3" />
+                  Mode 3 - Fix both N<sub>main</sub> and lg<sub>center</sub>
+                </label>
+              </div>
+            </div>
+
+            <!-- 8 · Mode-specific input -->
+            <div class="form-section">
+              <div class="section-title">8 · Winding parameters</div>
+
+              <div id="mode1-fields" class="mode-fields active">
+                <div class="form-row single">
+                  <div class="form-group">
+                    <label for="N_main"
+                      data-tip="Fixed number of turns for the main (centre-leg) winding. The solver will find the centre-leg air gap that achieves L_nom.">N<sub>main</sub>
+                      <span class="unit">(turns)</span></label>
+                    <input type="number" id="N_main" value="16" min="1" step="1" />
+                    <span class="hint">Solver finds lg<sub>center</sub></span>
+                  </div>
+                </div>
+              </div>
+
+              <div id="mode2-fields" class="mode-fields">
+                <div class="form-row single">
+                  <div class="form-group">
+                    <label for="lg_center_mm"
+                      data-tip="Fixed physical air gap in the centre leg (material removed). The solver will find the integer N_main that achieves L_nom.">lg<sub>center</sub>
+                      <span class="unit">(mm)</span></label>
+                    <input type="number" id="lg_center_mm" value="0.3" min="0.001" step="0.01" />
+                    <span class="hint">Solver finds N<sub>main</sub> (rounds up)</span>
+                  </div>
+                </div>
+              </div>
+
+              <div id="mode3-fields" class="mode-fields">
+                <div class="form-row single">
+                  <div class="form-group">
+                    <label for="N_main_m3"
+                      data-tip="Number of turns for the main winding. Both N and lg are fixed; L is computed from the resulting reluctance circuit.">N<sub>main</sub>
+                      <span class="unit">(turns)</span></label>
+                    <input type="number" id="N_main_m3" value="16" min="1" step="1" />
+                  </div>
+                </div>
+                <div class="form-row single">
+                  <div class="form-group">
+                    <label for="lg_center_mm_m3"
+                      data-tip="Centre-leg air gap. Both N and lg are fixed; L is computed from the resulting reluctance circuit.">lg<sub>center</sub>
+                      <span class="unit">(mm)</span></label>
+                    <input type="number" id="lg_center_mm_m3" value="0.3" min="0.001" step="0.01" />
+                    <span class="hint">Both fixed - L is computed, not targeted</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Bias turns override (all modes) -->
+              <div class="form-row single">
+                <div class="form-group">
+                  <label for="N_bias_override"
+                    data-tip="Turns per bias coil (per outer leg). Total N_bias = 2 x this value. Leave empty to let the solver find the turns needed to achieve L_min at I_bias_max.">N<sub>bias</sub>
+                    <span class="unit">(turns - per coil)</span></label>
+                  <input type="number" id="N_bias_override" value="" min="1" step="1" placeholder="auto" />
+                </div>
+              </div>
+            </div>
+
+            <!-- 9 · Wire selection -->
+            <div class="form-section">
+              <div class="section-title">9 · Wire selection</div>
+              <div style="font-size:11px;font-weight:600;color:var(--grey-text);margin-bottom:6px;">
+                Main winding (centre leg)
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="AWG_main"
+                    data-tip="Wire gauge for the main winding. Auto selects the thinnest AWG that satisfies both ampacity (J_max) and skin-effect limits at f_sw.">AWG
+                    main</label>
+                  <select id="AWG_main">
+                    <option value="auto">Auto</option>
+                    <!-- populated by JS -->
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="N_cond_main"
+                    data-tip="Number of conductors in parallel per turn for the main winding. Auto uses the minimum needed to satisfy J_max with the selected AWG. Override with any positive integer.">Parallel
+                    conductors</label>
+                  <input type="number" id="N_cond_main" value="" min="1" step="1" placeholder="auto" />
+                </div>
+              </div>
+              <div style="font-size:11px;font-weight:600;color:var(--grey-text);margin-bottom:6px;margin-top:8px;">
+                Bias winding (outer legs)
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="AWG_bias"
+                    data-tip="Wire gauge for the bias winding. Auto selects based on I_bias_max and skin effect. DC winding - skin effect is less critical.">AWG
+                    bias</label>
+                  <select id="AWG_bias">
+                    <option value="auto">Auto</option>
+                    <!-- populated by JS -->
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="N_cond_bias"
+                    data-tip="Number of conductors in parallel per turn for the bias winding. Auto uses the minimum needed to satisfy J_max with the selected AWG. Override with any positive integer.">Parallel
+                    conductors</label>
+                  <input type="number" id="N_cond_bias" value="" min="1" step="1" placeholder="auto" />
+                </div>
+              </div>
+            </div>
+
+          </div><!-- /col 3 -->
+
+        </div><!-- /form-columns -->
+
+        <!-- Calculate button -->
+        <button id="btn-calculate" type="button">Calculate Design</button>
+        <div id="error-msg"></div>
+
+      </div><!-- /panel-body -->
+    </aside>
+
+    <!-- ╔══════════════════════════════════════════════════════════
+       RIGHT COLUMN - Results
+  ══════════════════════════════════════════════════════════════╗ -->
+    <main id="right-panel">
+
+      <!-- Placeholder shown before first calculation -->
+      <div id="results-placeholder" class="panel">
+        <div class="panel-body">
+          <div id="results-placeholder-inner">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#aaa" stroke-width="1.5">
+              <circle cx="12" cy="12" r="10" />
+              <path d="M12 8v4l3 3" />
+            </svg>
+            <p>Set design parameters and click <strong>Calculate Design</strong>.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Results (hidden until calculation) -->
+      <div id="results-panel">
+
+        <!-- Summary table -->
+        <div class="panel" style="margin-bottom:16px;">
+          <div class="panel-header">Design Summary</div>
+          <div class="panel-body" style="padding:10px 12px;">
+            <table id="summary-table">
+              <thead>
+                <tr>
+                  <th>Parameter</th>
+                  <th>Value</th>
+                  <th>Unit</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="summary-tbody"></tbody>
+            </table>
+            <div class="export-row">
+              <button class="btn-export" id="btn-pdf" type="button">⬇ Download PDF</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- DC analysis plot -->
+        <div class="panel" style="margin-bottom:16px;">
+          <div class="panel-header">DC Bias Analysis — L<sub>DC</sub> vs I<sub>bias</sub></div>
+          <div id="plot-dc" class="plot-div"></div>
+        </div>
+
+        <!-- AC analysis plot -->
+        <div class="panel" style="margin-bottom:16px;">
+          <div class="panel-header">AC Analysis — L<sub>ac</sub> &amp; B<sub>ac</sub> vs I<sub>bias</sub></div>
+          <div id="plot-ac" class="plot-div"></div>
+        </div>
+
+        <!-- Winding window cross-sections -->
+        <div class="ww-row">
+          <div class="ww-card">
+            <div class="panel-header" id="ww-main-label">Main winding</div>
+            <canvas id="canvas-main" width="220" height="260"></canvas>
+          </div>
+          <div class="ww-card">
+            <div class="panel-header" id="ww-bias-label">Bias winding (per leg)</div>
+            <canvas id="canvas-bias" width="220" height="260"></canvas>
+          </div>
+        </div>
+
+        <!-- Core geometry diagram -->
+        <div class="panel" style="margin-bottom:16px;">
+          <div class="panel-header">Core Geometry</div>
+          <div class="svg-core-wrapper" id="svg-core-container">
+            <!-- SVG injected inline by JS after calculation -->
+          </div>
+        </div>
+
+      </div><!-- /results-panel -->
+
+    </main>
+
+  </div><!-- /app-layout -->
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+     SCRIPTS
+     Load order matters: db -> core_geom -> physics -> design -> analysis -> plots -> canvas -> report
+════════════════════════════════════════════════════════════════════════ -->
+  <!-- CDN libraries -->
+  <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+
+  <!-- App modules -->
+  <script src="js/db.js"></script>
+  <script src="js/core_geom.js"></script>
+  <script src="js/physics.js"></script>
+  <script src="js/design.js"></script>
+  <script src="js/analysis.js"></script>
+  <script src="js/plots.js"></script>
+  <script src="js/canvas_ww.js"></script>
+  <script src="js/report.js"></script>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+     APPLICATION CONTROLLER
+════════════════════════════════════════════════════════════════════════ -->
+  <script>
+    // ── Populate dropdowns from database ───────────────────────────────────────
+    (function initDropdowns() {
+      // Core selector
+      const coreSelect = document.getElementById("core_name");
+      Object.keys(CORES).forEach(name => {
+        const opt = document.createElement("option");
+        opt.value = name;
+        opt.textContent = name;
+        coreSelect.appendChild(opt);
+      });
+
+      // AWG selectors
+      const awgMain = document.getElementById("AWG_main");
+      const awgBias = document.getElementById("AWG_bias");
+      // AWG_DATA is ordered 41->10; display same order
+      for (const row of AWG_DATA) {
+        const awg = row[COL_AWG];
+        [awgMain, awgBias].forEach(sel => {
+          const opt = document.createElement("option");
+          opt.value = awg;
+          opt.textContent = `AWG ${awg}`;
+          sel.appendChild(opt);
+        });
+      }
+    })();
+
+    // ── Show core AeAw info when core changes ──────────────────────────────────
+    function updateCoreInfo() {
+      const name = document.getElementById("core_name").value;
+      const spacingMm = parseFloat(document.getElementById("spacing_mm").value) || 0.25;
+      const thicknessMm = parseFloat(document.getElementById("thickness_mm").value) || 0.75;
+      try {
+        const Ae_c = coreW(name, "center") * coreH(name);         // mm²
+        const Ae_o = coreW(name, "outer") * coreH(name);         // mm²
+        const Ae_h = coreHL(name) * coreH(name);         // mm²
+        const cfW = coilFormerW(name, "half", spacingMm, thicknessMm);
+        const cfL = coilFormerL(name, "half", spacingMm, thicknessMm);
+        const AeAw = Ae_c * cfW * cfL;
+        document.getElementById("core-info").innerHTML =
+          `Ae<sub>c</sub>=${Ae_c.toFixed(1)} mm²  Ae<sub>o</sub>=${Ae_o.toFixed(1)} mm²  ` +
+          `Ae<sub>h</sub>=${Ae_h.toFixed(1)} mm²  ` +
+          `CF_W=${cfW.toFixed(1)} mm  CF_L=${cfL.toFixed(1)} mm  ` +
+          `AeAw=${AeAw.toFixed(0)} mm⁴`;
+      } catch (e) {
+        document.getElementById("core-info").textContent = "";
+      }
+    }
+    // Clear invalid highlight as soon as the user types in a field
+    document.querySelector(".panel-body").addEventListener("input", function (e) {
+      if (e.target.tagName === "INPUT") e.target.classList.remove("invalid");
+    });
+
+    document.getElementById("core_name").addEventListener("change", updateCoreInfo);
+    document.getElementById("spacing_mm").addEventListener("input", updateCoreInfo);
+    document.getElementById("thickness_mm").addEventListener("input", updateCoreInfo);
+    updateCoreInfo();
+
+    // ── Material selector show/hide ─────────────────────────────────────────────
+    document.getElementById("mat_name").addEventListener("change", function () {
+      const isCustom = this.value === "User-defined";
+      document.getElementById("material-presets").style.display = isCustom ? "none" : "";
+      document.getElementById("material-custom").style.display = isCustom ? "" : "none";
+      if (!isCustom) {
+        const mat = MATERIALS[this.value];
+        document.getElementById("disp-k1").textContent = mat.k1;
+        document.getElementById("disp-k2").textContent = mat.k2;
+        document.getElementById("disp-k3").textContent = mat.k3;
+      }
+    });
+
+    // ── Design mode radio toggle ────────────────────────────────────────────────
+    document.querySelectorAll('input[name="design_mode"]').forEach(radio => {
+      radio.addEventListener("change", function () {
+        const mode = parseInt(this.value);
+        document.getElementById("mode1-fields").classList.toggle("active", mode === 1);
+        document.getElementById("mode2-fields").classList.toggle("active", mode === 2);
+        document.getElementById("mode3-fields").classList.toggle("active", mode === 3);
+      });
+    });
+
+    // ── Read all form inputs into an inputs object ──────────────────────────────
+    function readInputs() {
+      function fv(id) { return parseFloat(document.getElementById(id).value); }
+      function iv(id) { return parseInt(document.getElementById(id).value); }
+      function sv(id) { return document.getElementById(id).value.trim(); }
+
+      const matName = sv("mat_name");
+      const mat = MATERIALS[matName];
+      const isCustom = matName === "User-defined";
+
+      const k1 = isCustom ? fv("k1") : mat.k1;
+      const k2 = isCustom ? fv("k2") : mat.k2;
+      const k3 = isCustom ? fv("k3") : mat.k3;
+
+      const design_mode = parseInt(
+        document.querySelector('input[name="design_mode"]:checked').value
+      );
+
+      // Optional integer override: empty / NaN -> null
+      function overrideInt(id) {
+        const v = document.getElementById(id).value.trim();
+        if (!v) return null;
+        const n = parseInt(v);
+        return isNaN(n) ? null : n;
+      }
+
+      // Wire: "auto" -> null
+      function awgVal(id) {
+        const v = sv(id);
+        return v === "auto" ? null : parseInt(v);
+      }
+      function condVal(id) {
+        const v = document.getElementById(id).value.trim();
+        if (!v) return null;
+        const n = parseInt(v);
+        return (isNaN(n) || n < 1) ? null : n;
+      }
+
+      // Mode 3: use dedicated fields; fallback to mode-1/2 fields for modes 1&2
+      const N_main_val = design_mode === 3 ? iv("N_main_m3") : iv("N_main");
+      const lg_center_val = design_mode === 3 ? fv("lg_center_mm_m3") : fv("lg_center_mm");
+
+      return {
+        L_main_nom_uH: fv("L_main_nom_uH"),
+        L_main_min_uH: fv("L_main_min_uH"),
+        f_sw_kHz: fv("f_sw_kHz"),
+        I_main_rms_A: fv("I_main_rms_A"),
+        I_main_pk_A: fv("I_main_pk_A"),
+        B_main_max_T: fv("B_main_max_T"),
+        I_bias_max_A: fv("I_bias_max_A"),
+        mat_name: matName,
+        mu_i: mat ? mat.mu_i : null,
+        desc_mat: mat ? mat.desc : "User-defined",
+        k1, k2, k3,
+        kw: fv("kw"),
+        J_max_Acm2: fv("J_max_Acm2"),
+        coil_length: sv("coil_length"),
+        spacing_mm: fv("spacing_mm"),
+        thickness_mm: fv("thickness_mm"),
+        lg_outer_mm: fv("lg_outer_mm"),
+        kf_outer: fv("kf_outer"),
+        kf_center: fv("kf_center"),
+        core_name: sv("core_name"),
+        design_mode,
+        N_main: N_main_val,
+        lg_center_mm: lg_center_val,
+        AWG_main: awgVal("AWG_main"),
+        N_cond_main: condVal("N_cond_main"),
+        AWG_bias: awgVal("AWG_bias"),
+        N_cond_bias: condVal("N_cond_bias"),
+        N_bias_override: overrideInt("N_bias_override"),
+      };
+    }
+
+    // ── Validate inputs (basic) ─────────────────────────────────────────────────
+    function validateInputs(inp) {
+      const errors = [];
+
+      // Helper: check a numeric field is a finite positive number
+      function req(val, label) {
+        if (!isFinite(val) || isNaN(val)) errors.push(`${label} is required`);
+      }
+      function reqPos(val, label) {
+        if (!isFinite(val) || isNaN(val) || val <= 0) errors.push(`${label} must be > 0`);
+      }
+      function reqNonNeg(val, label) {
+        if (!isFinite(val) || isNaN(val) || val < 0) errors.push(`${label} must be ≥ 0`);
+      }
+      function reqPosInt(val, label) {
+        if (!Number.isInteger(val) || val < 1) errors.push(`${label} must be a positive integer`);
+      }
+
+      reqPos(inp.L_main_nom_uH, "L_nom");
+      reqPos(inp.L_main_min_uH, "L_min");
+      if (isFinite(inp.L_main_min_uH) && isFinite(inp.L_main_nom_uH) &&
+        inp.L_main_min_uH >= inp.L_main_nom_uH)
+        errors.push("L_min must be < L_nom");
+
+      reqPos(inp.f_sw_kHz, "f_sw");
+      reqPos(inp.I_main_rms_A, "I_rms");
+      reqPos(inp.I_main_pk_A, "I_pk");
+      reqPos(inp.B_main_max_T, "B_max");
+      reqPos(inp.I_bias_max_A, "I_bias_max");
+
+      reqPos(inp.kw, "Fill factor k_w");
+      reqPos(inp.J_max_Acm2, "J_max");
+
+      reqNonNeg(inp.spacing_mm, "Clearance");
+      reqPos(inp.thickness_mm, "Wall thickness");
+      reqNonNeg(inp.lg_outer_mm, "lg_outer");
+      reqPos(inp.kf_outer, "kf_outer");
+      reqPos(inp.kf_center, "kf_center");
+
+      // Material Steinmetz params (only validated if user-defined)
+      if (isNaN(inp.k1) || inp.k1 <= 0) errors.push("k1 must be > 0");
+      if (isNaN(inp.k2) || inp.k2 <= 0) errors.push("k2 must be > 0");
+      if (isNaN(inp.k3) || inp.k3 <= 0) errors.push("k3 must be > 0");
+
+      // Mode-specific
+      if (inp.design_mode === 1 || inp.design_mode === 3)
+        reqPosInt(inp.N_main, "N_main");
+      if (inp.design_mode === 2 || inp.design_mode === 3) {
+        if (!isFinite(inp.lg_center_mm) || isNaN(inp.lg_center_mm) || inp.lg_center_mm <= 0)
+          errors.push("lg_center must be > 0");
+      }
+
+      // Winding conductors — null = auto; if overridden must be a positive integer
+      if (inp.N_cond_main !== null) reqPosInt(inp.N_cond_main, "Parallel conductors (main)");
+      if (inp.N_cond_bias !== null) reqPosInt(inp.N_cond_bias, "Parallel conductors (bias)");
+
+      return errors;
+    }
+
+    // ── Populate summary table ──────────────────────────────────────────────────
+    function populateSummary(design) {
+      const tbody = document.getElementById("summary-tbody");
+      tbody.innerHTML = "";
+
+      function statusBadge(ok, valStr) {
+        if (ok === null) return `<td class="val">${valStr}</td>`;
+        return ok
+          ? `<td class="ok">${valStr}</td>`
+          : `<td class="bad">${valStr}</td>`;
+      }
+
+      function row(label, value, unit, status = null) {
+        const tr = document.createElement("tr");
+        const statusClass = status === null ? "" : (status ? "ok" : "bad");
+        tr.innerHTML = `
+      <td>${label}</td>
+      <td class="val">${value}</td>
+      <td>${unit}</td>
+      <td class="${statusClass}">${status === null ? "" : (status ? "✓" : "⚠")}</td>
+    `;
+        tbody.appendChild(tr);
+      }
+
+      const modeLabel = design.design_mode === 1
+        ? "Mode 1: N -> lg"
+        : design.design_mode === 2
+          ? "Mode 2: lg -> N"
+          : "Mode 3: N + lg fixed";
+
+      row("Design mode", modeLabel, "-");
+      row("Core", design.core, "-");
+      row("N_main", design.N_main, "turns");
+      row("lg_center", design.lg_center_mm.toFixed(4), "mm");
+      row("lg_outer", design.lg_outer_mm, "mm");
+      row("L_nom (target)", design.L_main_nom_uH.toFixed(1), "μH");
+      row("L_nom (achieved)", design.L_nom_achieved_uH.toFixed(2), "μH",
+        Math.abs(design.L_nom_achieved_uH - design.L_main_nom_uH) < 0.5);
+      row("L_min (target)", design.L_main_min_uH.toFixed(1), "μH");
+      row("L_min (achieved)", design.L_ac_at_bias_uH.toFixed(2), "μH");
+      row("N_bias", design.N_bias, "turns");
+      row("N_cond_main", `${design.N_cond_main} x AWG ${design.AWG_main}`, "-");
+      row("N_cond_bias", `${design.N_cond_bias} x AWG ${design.AWG_bias}`, "-");
+      row("k_w main", `${(design.kw_req_main * 100).toFixed(1)}%`, "",
+        design.kw_req_main <= design.kw_max);
+      row("k_w bias", `${(design.kw_req_bias * 100).toFixed(1)}%`, "",
+        design.kw_req_bias <= design.kw_max);
+      row("AeAw required", design.AeAw_rec_mm4.toFixed(1), "mm⁴");
+      row("AeAw available", design.AeAw_avail_mm4.toFixed(1), "mm⁴",
+        design.AeAw_avail_mm4 >= design.AeAw_rec_mm4);
+      row("B_center (pk)", design.B_center_mT.toFixed(1), "mT",
+        design.B_center_mT <= design.B_main_max_T * 1000);
+      row("Bdc_max (outer)", design.Bdc_max_mT.toFixed(1), "mT");
+      row("R_main", design.R_main_winding_mOhm.toFixed(2), "mΩ");
+      row("R_bias", design.R_bias_winding_mOhm.toFixed(2), "mΩ");
+    }
+
+    // ── Update winding window canvases ─────────────────────────────────────────
+    function updateWindingWindows(design) {
+      const dpr = window.devicePixelRatio || 1;
+
+      function prepCanvas(id) {
+        const canvas = document.getElementById(id);
+        const card = canvas.parentElement;
+        const dispW = Math.max(card.clientWidth || 220, 80);
+        const dispH = Math.round(dispW * 1.2);
+        canvas.style.width = dispW + "px";
+        canvas.style.height = dispH + "px";
+        canvas.width = Math.round(dispW * dpr);
+        canvas.height = Math.round(dispH * dpr);
+        return dpr;
+      }
+
+      // Main winding
+      const titleMain = `Main: ${design.N_main}T x ${design.N_cond_main} x AWG${design.AWG_main}`;
+      document.getElementById("ww-main-label").textContent = titleMain;
+      drawWindingWindow(
+        "canvas-main",
+        design.CF_W_mm, design.CF_L_mm,
+        design.S_main_total_mm2 * 1e-6,
+        design.N_main, design.N_cond_main,
+        design.thickness_mm, design.spacing_mm,
+        "", prepCanvas("canvas-main")
+      );
+
+      // Bias winding (per leg = N_bias/2 turns)
+      const titleBias = `Bias/leg: ${Math.floor(design.N_bias / 2)}T x ${design.N_cond_bias} x AWG${design.AWG_bias}`;
+      document.getElementById("ww-bias-label").textContent = titleBias;
+      drawWindingWindow(
+        "canvas-bias",
+        design.CF_W_mm, design.CF_L_mm,
+        design.S_bias_total_mm2 * 1e-6,
+        Math.floor(design.N_bias / 2), design.N_cond_bias,
+        design.thickness_mm, design.spacing_mm,
+        "", prepCanvas("canvas-bias")
+      );
+    }
+
+    // ── Main calculate handler ──────────────────────────────────────────────────
+    let lastDesign = null;
+
+    document.getElementById("btn-calculate").addEventListener("click", function () {
+      const btn = this;
+      const errorDiv = document.getElementById("error-msg");
+
+      // Clear errors and previous invalid highlights
+      errorDiv.classList.remove("visible");
+      errorDiv.textContent = "";
+      document.querySelectorAll("input.invalid").forEach(el => el.classList.remove("invalid"));
+
+      // Highlight all empty required number inputs
+      const requiredIds = [
+        "L_main_nom_uH", "L_main_min_uH",
+        "f_sw_kHz", "I_bias_max_A", "I_main_rms_A", "I_main_pk_A", "B_main_max_T",
+        "kw", "J_max_Acm2",
+        "spacing_mm", "thickness_mm", "lg_outer_mm", "kf_outer", "kf_center",
+      ];
+      let anyEmpty = false;
+      requiredIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (el && el.value.trim() === "") { el.classList.add("invalid"); anyEmpty = true; }
+      });
+      // Mode-specific required fields
+      const mode = parseInt(document.querySelector('input[name="design_mode"]:checked').value);
+      if (mode === 1) {
+        const el = document.getElementById("N_main");
+        if (el && el.value.trim() === "") { el.classList.add("invalid"); anyEmpty = true; }
+      } else if (mode === 2) {
+        const el = document.getElementById("lg_center_mm");
+        if (el && el.value.trim() === "") { el.classList.add("invalid"); anyEmpty = true; }
+      } else if (mode === 3) {
+        ["N_main_m3", "lg_center_mm_m3"].forEach(id => {
+          const el = document.getElementById(id);
+          if (el && el.value.trim() === "") { el.classList.add("invalid"); anyEmpty = true; }
+        });
+      }
+      if (anyEmpty) {
+        errorDiv.textContent = "Please fill in all required fields (highlighted in red).";
+        errorDiv.classList.add("visible");
+        return;
+      }
+
+      // Read inputs
+      let inp;
+      try { inp = readInputs(); }
+      catch (e) {
+        errorDiv.textContent = "Error reading inputs: " + e.message;
+        errorDiv.classList.add("visible");
+        return;
+      }
+
+      // Validate
+      const errors = validateInputs(inp);
+      if (errors.length > 0) {
+        errorDiv.innerHTML = errors.map(e => `• ${e}`).join("<br>");
+        errorDiv.classList.add("visible");
+        return;
+      }
+
+      // Show spinner
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span>Calculating…';
+
+      // Use setTimeout to let the DOM update (spinner visible) before heavy work
+      setTimeout(function () {
+        try {
+          const design = calculate(inp);
+          lastDesign = design;
+
+          // Show results area
+          document.getElementById("results-placeholder").style.display = "none";
+          document.getElementById("results-panel").classList.add("visible");
+
+          // Summary
+          populateSummary(design);
+
+          // Plots
+          plotDcAnalysis(design, "plot-dc");
+          plotAcAnalysis(design, "plot-ac");
+
+          // Winding windows
+          updateWindingWindows(design);
+
+          // Core geometry SVG - fetch and inject inline for full rendering fidelity
+          const svgFile = design.coil_length === "full"
+            ? "../data/Core_Geometry_Full.svg"
+            : "../data/Core_Geometry_Half.svg";
+          const svgContainer = document.getElementById("svg-core-container");
+          svgContainer.innerHTML = '<span style="color:#aaa;font-size:11px;padding:12px;display:block;">Loading diagram…</span>';
+          fetch(svgFile)
+            .then(r => { if (!r.ok) throw new Error(r.statusText); return r.text(); })
+            .then(svgText => {
+              svgContainer.innerHTML = svgText;
+              const svg = svgContainer.querySelector("svg");
+              if (svg) {
+                svg.style.maxWidth = "100%";
+                svg.style.height = "auto";
+                svg.removeAttribute("width");
+                svg.removeAttribute("height");
+              }
+            })
+            .catch(() => {
+              svgContainer.innerHTML = '<span style="color:#aaa;font-size:11px;padding:12px;display:block;">Core geometry diagram not available (open via a local server or deploy to GitHub Pages)</span>';
+            });
+
+        } catch (e) {
+          errorDiv.textContent = "Calculation error: " + e.message;
+          errorDiv.classList.add("visible");
+          console.error(e);
+        } finally {
+          btn.disabled = false;
+          btn.innerHTML = "Calculate Design";
+        }
+      }, 20);
+    });
+
+    // ── Export buttons ──────────────────────────────────────────────────────────
+    document.getElementById("btn-pdf").addEventListener("click", async function () {
+      if (!lastDesign) return;
+      this.textContent = "Generating PDF…";
+      this.disabled = true;
+      try {
+        await generatePDF(lastDesign, "plot-dc", "plot-ac");
+      } catch (e) {
+        alert("PDF generation failed: " + e.message);
+        console.error(e);
+      } finally {
+        this.textContent = "⬇ Download PDF";
+        this.disabled = false;
+      }
+    });
+
+    // ── Global tooltip (position: fixed, renders above everything) ─────────────
+    (function () {
+      const tip = document.getElementById("g-tooltip");
+      let hideTimer;
+
+      document.addEventListener("mouseover", function (e) {
+        const label = e.target.closest("label[data-tip]");
+        if (!label) return;
+        clearTimeout(hideTimer);
+        tip.textContent = label.dataset.tip;
+        tip.style.opacity = "1";
+        positionTip(e, label);
+      });
+
+      document.addEventListener("mousemove", function (e) {
+        if (!e.target.closest("label[data-tip]")) return;
+        positionTip(e);
+      });
+
+      document.addEventListener("mouseout", function (e) {
+        if (!e.target.closest("label[data-tip]")) return;
+        hideTimer = setTimeout(() => { tip.style.opacity = "0"; }, 80);
+      });
+
+      function positionTip(e, label) {
+        const GAP = 8;
+        const TW = 240;
+        let x = e.clientX + GAP;
+        let y = e.clientY + GAP;
+        // Keep inside viewport
+        if (x + TW > window.innerWidth - 8) x = e.clientX - TW - GAP;
+        if (y + 80 > window.innerHeight - 8) y = e.clientY - 80 - GAP;
+        tip.style.left = x + "px";
+        tip.style.top = y + "px";
+      }
+    })();
+  </script>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+     FOOTER
+════════════════════════════════════════════════════════════════════════ -->
+  <footer id="app-footer">
+    <span>Variable Inductor Design Tool &mdash; Renan R. Duarte</span>
+    <a href="https://github.com/duarterr/Variable-Inductor" target="_blank" rel="noopener">GitHub Repository</a>
+  </footer>
+
+</body>
+
+</html>

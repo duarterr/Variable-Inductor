@@ -1,0 +1,550 @@
+/* ============================================================
+   style.css — Variable Inductor Design Tool
+   Clean two-column professional layout
+   ============================================================ */
+
+/* ── Reset & base ─────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --accent: #2980b9;
+  --accent-dark: #2c3e50;
+  --accent-light: #d6eaf8;
+  --grey-bg: #f4f6f9;
+  --grey-border: #d0d7e0;
+  --grey-text: #7f8c8d;
+  --red: #e74c3c;
+  --green: #27ae60;
+  --font: "Segoe UI", system-ui, -apple-system, sans-serif;
+  --radius: 6px;
+  --shadow: 0 1px 4px rgba(0, 0, 0, .10);
+}
+
+body {
+  font-family: var(--font);
+  font-size: 13px;
+  background: var(--grey-bg);
+  color: #2c3e50;
+  line-height: 1.5;
+}
+
+/* ── App header ───────────────────────────────────────────── */
+#app-header {
+  background: var(--accent-dark);
+  color: #fff;
+  padding: 14px 20px;
+  text-align: center;
+}
+#app-header h1 {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+#app-header .subtitle {
+  display: block;
+  font-size: 11px;
+  opacity: 0.65;
+  margin-top: 2px;
+}
+
+/* ── Main layout (single column: inputs → summary → figures) */
+#app-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px 20px;
+  max-width: 1000px;
+  margin: 0 auto;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* ── Form columns inside inputs panel ─────────────────────── */
+.form-columns {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0 24px;
+  align-items: stretch;
+  margin-bottom: 14px;
+}
+
+.form-col {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+/* ── Panel card ───────────────────────────────────────────── */
+.panel {
+  background: #fff;
+  border: 1px solid var(--grey-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.panel-header {
+  background: var(--accent-dark);
+  color: #fff;
+  padding: 9px 14px;
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 0.2px;
+}
+
+.panel-body {
+  padding: 14px 16px;
+}
+
+/* ── Form sections ────────────────────────────────────────── */
+.form-section {
+  margin-bottom: 0;
+}
+
+.form-section:last-child {
+  margin-bottom: 0;
+}
+
+.section-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--accent);
+  border-bottom: 1.5px solid var(--accent-light);
+  padding-bottom: 4px;
+  margin-bottom: 10px;
+}
+
+/* Grid rows for label + input pairs */
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.form-row.single {
+  grid-template-columns: 1fr;
+}
+
+.form-row.triple {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
+/* Prevent grid blowout: cells must be able to shrink */
+.form-row>* {
+  min-width: 0;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.form-group label {
+  font-size: 12px;
+  color: var(--grey-text);
+  font-weight: 600;
+  cursor: default;
+  width: fit-content;
+}
+
+.form-group label span.unit {
+  font-weight: 400;
+  font-size: 10px;
+}
+
+.form-group label[data-tip] {
+  cursor: help;
+}
+
+/* ── Global tooltip (rendered at body level via JS) ────────── */
+#g-tooltip {
+  position: fixed;
+  z-index: 9999;
+  background: var(--accent-dark);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.45;
+  padding: 6px 10px;
+  border-radius: 4px;
+  max-width: 240px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .28);
+  pointer-events: none;
+  white-space: normal;
+  opacity: 0;
+  transition: opacity .12s;
+}
+
+.form-group input,
+.form-group select {
+  width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--grey-border);
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: var(--font);
+  background: #fff;
+  color: #2c3e50;
+  transition: border-color .15s;
+}
+
+.form-group input:focus,
+.form-group select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(41, 128, 185, .18);
+}
+
+/* Input validation */
+.form-group input.invalid {
+  border-color: var(--red);
+  background: #fdf2f1;
+}
+
+.form-group input.invalid:focus {
+  box-shadow: 0 0 0 2px rgba(231, 76, 60, .18);
+}
+
+.hint {
+  font-size: 9px;
+  color: var(--grey-text);
+}
+
+/* Radio group */
+.radio-group {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  padding: 4px 0;
+}
+
+.radio-group label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  font-size: 12px;
+  color: #2c3e50;
+}
+
+.radio-group input[type=radio] {
+  accent-color: var(--accent);
+}
+
+/* Conditional sub-fields */
+.mode-fields {
+  display: none;
+}
+
+.mode-fields.active {
+  display: block;
+}
+
+/* Info badge */
+.info-badge {
+  display: inline-block;
+  background: var(--accent-light);
+  color: var(--accent);
+  border-radius: 3px;
+  padding: 2px 7px;
+  font-size: 10px;
+  font-weight: 600;
+  margin-top: 3px;
+}
+
+/* Warning badge */
+.warn-badge {
+  display: inline-block;
+  background: #fef9e7;
+  color: #f39c12;
+  border-radius: 3px;
+  padding: 2px 7px;
+  font-size: 10px;
+  font-weight: 600;
+  margin-top: 3px;
+  border: 1px solid #f9ca24;
+}
+
+/* ── Calculate button ─────────────────────────────────────── */
+#btn-calculate {
+  width: 25%;
+  margin-top: 14px;
+  padding: 10px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  font-size: 14px;
+  font-weight: 700;
+  font-family: var(--font);
+  cursor: pointer;
+  letter-spacing: 0.3px;
+  transition: background .15s, transform .08s;
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+#btn-calculate:hover {
+  background: #2471a3;
+}
+
+#btn-calculate:active {
+  transform: scale(0.985);
+}
+
+#btn-calculate:disabled {
+  background: #aab7c1;
+  cursor: default;
+}
+
+/* Error message */
+#error-msg {
+  margin-top: 10px;
+  padding: 9px 12px;
+  background: #fdf2f1;
+  border: 1px solid var(--red);
+  border-radius: var(--radius);
+  color: var(--red);
+  font-size: 12px;
+  display: none;
+}
+
+#error-msg.visible {
+  display: block;
+}
+
+/* ── Results panel ────────────────────────────────────────── */
+#results-panel {
+  display: none;
+}
+
+#results-panel.visible {
+  display: block;
+}
+
+/* Placeholder text shown before first calculation */
+#results-placeholder {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--grey-text);
+  font-size: 13px;
+}
+
+#results-placeholder svg {
+  margin-bottom: 12px;
+  opacity: .35;
+}
+
+/* ── Summary table ────────────────────────────────────────── */
+#summary-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin-bottom: 16px;
+}
+
+#summary-table thead th {
+  background: var(--accent-dark);
+  color: #fff;
+  padding: 6px 10px;
+  text-align: left;
+  font-weight: 700;
+}
+
+#summary-table tbody tr:nth-child(even) {
+  background: var(--grey-bg);
+}
+
+#summary-table tbody td {
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--grey-border);
+  vertical-align: middle;
+}
+
+#summary-table tbody td:first-child {
+  font-weight: 600;
+  color: var(--accent-dark);
+}
+
+#summary-table tbody td.val {
+  font-family: "Consolas", monospace;
+  font-size: 11px;
+}
+
+#summary-table tbody td.ok {
+  color: var(--green);
+  font-weight: 700;
+}
+
+#summary-table tbody td.warn {
+  color: #f39c12;
+  font-weight: 700;
+}
+
+#summary-table tbody td.bad {
+  color: var(--red);
+  font-weight: 700;
+}
+
+/* ── Plot areas ───────────────────────────────────────────── */
+.plot-div {
+  min-height: 320px;
+}
+
+/* ── Winding window canvases ──────────────────────────────── */
+.ww-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.ww-card {
+  border: 1px solid var(--grey-border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.ww-card canvas {
+  display: block;
+  max-width: 100%;
+}
+
+/* ── Core geometry SVG ────────────────────────────────────── */
+.svg-core-wrapper {
+  text-align: center;
+  padding: 8px 0 4px;
+}
+
+.svg-core-wrapper img {
+  max-width: 100%;
+  height: auto;
+}
+
+/* ── Export buttons ───────────────────────────────────────── */
+.export-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.btn-export {
+  flex: 1;
+  padding: 8px;
+  border: none;
+  border-radius: var(--radius);
+  font-size: 12px;
+  font-weight: 700;
+  font-family: var(--font);
+  cursor: pointer;
+  transition: background .15s;
+}
+
+#btn-pdf {
+  background: var(--accent-dark);
+  color: #fff;
+}
+
+#btn-pdf:hover {
+  background: #1a252f;
+}
+
+/* Spinner while calculating */
+.spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, .4);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin .6s linear infinite;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ── Responsive ───────────────────────────────────────────── */
+@media (max-width: 900px) {
+  .form-columns {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .form-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .ww-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Footer ───────────────────────────────────────────────── */
+#app-footer {
+  background: var(--accent-dark);
+  color: rgba(255, 255, 255, .65);
+  font-size: 11px;
+  padding: 12px 20px;
+  margin-top: 8px;
+  text-align: center;
+  display: flex;
+  justify-content: center;
+  gap: 18px;
+}
+#app-footer a {
+  color: var(--accent-light);
+  text-decoration: none;
+  font-weight: 600;
+}
+#app-footer a:hover {
+  text-decoration: underline;
+}
+
+/* ── Print ────────────────────────────────────────────────── */
+@media print {
+  body {
+    background: #fff;
+  }
+
+  #app-header {
+    background: var(--accent-dark) !important;
+    -webkit-print-color-adjust: exact;
+  }
+
+  #left-panel {
+    display: none;
+  }
+
+  .btn-export {
+    display: none;
+  }
+
+  #btn-calculate {
+    display: none;
+  }
+
+  #app-footer {
+    display: none;
+  }
+}
