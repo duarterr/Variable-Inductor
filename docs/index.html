@@ -775,6 +775,12 @@
           : `<td class="bad">${valStr}</td>`;
       }
 
+      // Safe formatter: returns "—" instead of crashing on undefined/NaN
+      function fmt(val, decimals) {
+        if (val == null || !isFinite(val)) return "—";
+        return val.toFixed(decimals);
+      }
+
       function row(label, value, unit, status = null) {
         const tr = document.createElement("tr");
         const statusClass = status === null ? "" : (status ? "ok" : "bad");
@@ -796,32 +802,32 @@
       row("Design mode", modeLabel, "-");
       row("Core", design.core, "-");
       row("N_main", design.N_main, "turns");
-      row("lg_center", design.lg_center_mm.toFixed(4), "mm");
-      row("lg_outer", design.lg_outer_mm, "mm");
-      row("L_nom (target)", design.L_main_nom_uH.toFixed(1), "μH");
-      row("L_nom (achieved)", design.L_nom_achieved_uH.toFixed(2), "μH",
+      row("lg_center", fmt(design.lg_center_mm, 4), "mm");
+      row("lg_outer", fmt(design.lg_outer_mm, 3), "mm");
+      row("L_nom (target)", fmt(design.L_main_nom_uH, 1), "μH");
+      row("L_nom (achieved)", fmt(design.L_nom_achieved_uH, 2), "μH",
         Math.abs(design.L_nom_achieved_uH - design.L_main_nom_uH) < 0.5);
-      row("L_min (target)", design.L_main_min_uH.toFixed(1), "μH");
-      row("L_min (achieved)", design.L_ac_at_bias_uH.toFixed(2), "μH");
+      row("L_min (target)", fmt(design.L_main_min_uH, 1), "μH");
+      row("L_min (achieved)", fmt(design.L_ac_at_bias_uH, 2), "μH");
       row("N_bias", design.N_bias, "turns");
-      row("N_cond_main", `${design.N_cond_main} x AWG ${design.AWG_main}`, "-");
-      row("N_cond_bias", `${design.N_cond_bias} x AWG ${design.AWG_bias}`, "-");
-      row("k_w main", `${(design.kw_req_main * 100).toFixed(1)}%`, "",
+      row("N_cond_main", `${design.N_cond_main} × AWG ${design.AWG_main}`, "-");
+      row("N_cond_bias", `${design.N_cond_bias} × AWG ${design.AWG_bias}`, "-");
+      row("k_w main", `${fmt(design.kw_req_main * 100, 1)}%`, "",
         design.kw_req_main <= design.kw_max);
-      row("k_w bias", `${(design.kw_req_bias * 100).toFixed(1)}%`, "",
+      row("k_w bias", `${fmt(design.kw_req_bias * 100, 1)}%`, "",
         design.kw_req_bias <= design.kw_max);
-      row("AeAw required", design.AeAw_rec_mm4.toFixed(1), "mm⁴");
-      row("AeAw available", design.AeAw_avail_mm4.toFixed(1), "mm⁴",
+      row("AeAw required", fmt(design.AeAw_rec_mm4, 1), "mm⁴");
+      row("AeAw available", fmt(design.AeAw_avail_mm4, 1), "mm⁴",
         design.AeAw_avail_mm4 >= design.AeAw_rec_mm4);
-      row("B_center (pk)", design.B_center_mT.toFixed(1), "mT",
+      row("B_center (pk)", fmt(design.B_center_mT, 1), "mT",
         design.B_center_mT <= design.B_main_max_T * 1000);
-      row("Bdc_max (outer)", design.Bdc_max_mT.toFixed(1), "mT");
-      row("J_main", design.J_main_Acm2.toFixed(1), "A/cm²",
-        design.J_main_Acm2 <= design.J_max_Acm2);
-      row("J_bias", design.J_bias_Acm2.toFixed(1), "A/cm²",
-        design.J_bias_Acm2 <= design.J_max_Acm2);
-      row("R_main", design.R_main_winding_mOhm.toFixed(2), "mΩ");
-      row("R_bias", design.R_bias_winding_mOhm.toFixed(2), "mΩ");
+      row("Bdc_max (outer)", fmt(design.Bdc_max_mT, 1), "mT");
+      row("J_main", fmt(design.J_main_Acm2, 1), "A/cm²",
+        design.J_main_Acm2 != null && design.J_main_Acm2 <= design.J_max_Acm2);
+      row("J_bias", fmt(design.J_bias_Acm2, 1), "A/cm²",
+        design.J_bias_Acm2 != null && design.J_bias_Acm2 <= design.J_max_Acm2);
+      row("R_main", fmt(design.R_main_winding_mOhm, 2), "mΩ");
+      row("R_bias", fmt(design.R_bias_winding_mOhm, 2), "mΩ");
     }
 
     // ── Update winding window canvases ─────────────────────────────────────────
@@ -959,17 +965,22 @@
           fetch(svgFile)
             .then(r => { if (!r.ok) throw new Error(r.statusText); return r.text(); })
             .then(svgText => {
-              svgContainer.innerHTML = svgText;
-              const svg = svgContainer.querySelector("svg");
-              if (svg) {
-                svg.style.maxWidth = "100%";
-                svg.style.height = "auto";
-                svg.removeAttribute("width");
-                svg.removeAttribute("height");
-              }
+              // DOMParser handles <?xml?> and <!DOCTYPE> correctly; innerHTML does not
+              const parser = new DOMParser();
+              const doc = parser.parseFromString(svgText, "image/svg+xml");
+              const err = doc.querySelector("parsererror");
+              if (err) throw new Error("SVG parse error: " + err.textContent);
+              const svg = doc.documentElement;
+              svg.style.maxWidth = "100%";
+              svg.style.height = "auto";
+              svg.removeAttribute("width");
+              svg.removeAttribute("height");
+              svgContainer.innerHTML = "";
+              svgContainer.appendChild(document.adoptNode(svg));
             })
-            .catch(() => {
-              svgContainer.innerHTML = '<span style="color:#aaa;font-size:11px;padding:12px;display:block;">Core geometry diagram not available (open via a local server or deploy to GitHub Pages)</span>';
+            .catch(e => {
+              svgContainer.innerHTML = '<span style="color:#aaa;font-size:11px;padding:12px;display:block;">Core geometry diagram unavailable.</span>';
+              console.warn("SVG load failed:", e);
             });
 
         } catch (e) {
