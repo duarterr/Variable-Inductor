@@ -280,10 +280,10 @@ body {
 }
 
 /* ── Calculate button ─────────────────────────────────────── */
-#btn-calculate {
-  width: 25%;
-  margin-top: 14px;
-  padding: 10px;
+/* ── Shared action button style (Calculate + Download) ────── */
+.btn-action {
+  display: block;
+  padding: 10px 32px;
   background: var(--accent);
   color: #fff;
   border: none;
@@ -293,24 +293,13 @@ body {
   font-family: var(--font);
   cursor: pointer;
   letter-spacing: 0.3px;
+  white-space: nowrap;
   transition: background .15s, transform .08s;
-  display: block;
-  margin-left: auto;
-  margin-right: auto;
+  margin: 14px auto 0;
 }
-
-#btn-calculate:hover {
-  background: #2471a3;
-}
-
-#btn-calculate:active {
-  transform: scale(0.985);
-}
-
-#btn-calculate:disabled {
-  background: #aab7c1;
-  cursor: default;
-}
+.btn-action:hover  { background: #2471a3; }
+.btn-action:active { transform: scale(0.985); }
+.btn-action:disabled { background: #aab7c1; cursor: default; }
 
 /* Error message */
 #error-msg {
@@ -436,33 +425,6 @@ body {
   height: auto;
 }
 
-/* ── Export buttons ───────────────────────────────────────── */
-.export-row {
-  display: flex;
-  gap: 10px;
-  margin-top: 4px;
-}
-
-.btn-export {
-  flex: 1;
-  padding: 8px;
-  border: none;
-  border-radius: var(--radius);
-  font-size: 12px;
-  font-weight: 700;
-  font-family: var(--font);
-  cursor: pointer;
-  transition: background .15s;
-}
-
-#btn-pdf {
-  background: var(--accent-dark);
-  color: #fff;
-}
-
-#btn-pdf:hover {
-  background: #1a252f;
-}
 
 /* Spinner while calculating */
 .spinner {
@@ -536,11 +498,7 @@ body {
     display: none;
   }
 
-  .btn-export {
-    display: none;
-  }
-
-  #btn-calculate {
+  .btn-action {
     display: none;
   }
 

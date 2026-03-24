@@ -164,12 +164,11 @@ function calculate(inp) {
   const [, L_nom_final] = callBacFull(0.0, inp.I_main_pk_A, 2, lg_center, N_main);
 
   // ── Solve N_bias ────────────────────────────────────────────────────────────
-  // Find N_bias (continuous, even) such that
-  //   solveBacFull(I_bias_max, I_pk, N_bias, lg_center, N_main) = L_min
-  function f_Nbias(N_cont) {
-    const N = Math.max(2, Math.round(N_cont));
+  // Lac(N_bias) is monotonically decreasing with N_bias.
+  // Find the smallest even integer N_bias such that Lac(I_bias_max) <= L_min.
+  function lacAtN(N) {
     const [, Lac] = callBacFull(inp.I_bias_max_A, inp.I_main_pk_A, N, lg_center, N_main);
-    return Lac - L_min;
+    return Lac;
   }
 
   let N_bias;
@@ -178,10 +177,23 @@ function calculate(inp) {
     N_bias = inp.N_bias_override * 2;
   } else {
     try {
-      const N_bias_cont = brentq(f_Nbias, 2, 500, 0.5, 300);
-      let N_bias_calc   = Math.round(N_bias_cont);
-      if (N_bias_calc % 2 !== 0) N_bias_calc += 1;
-      N_bias = N_bias_calc;
+      // Expand upper bracket until Lac(N_hi) <= L_min
+      let N_lo = 2, N_hi = 100;
+      while (lacAtN(N_hi) > L_min && N_hi < 10000) N_hi *= 2;
+      if (lacAtN(N_hi) > L_min) throw new Error("Cannot reach L_min within N_bias limit");
+
+      // Binary search: find smallest even N in [N_lo, N_hi] where Lac <= L_min
+      while (N_hi - N_lo > 2) {
+        let N_mid = Math.floor((N_lo + N_hi) / 2);
+        if (N_mid % 2 !== 0) N_mid += 1;
+        if (lacAtN(N_mid) > L_min) {
+          N_lo = N_mid;
+        } else {
+          N_hi = N_mid;
+        }
+      }
+      // N_hi is the smallest even N where Lac <= L_min
+      N_bias = N_hi % 2 === 0 ? N_hi : N_hi + 1;
     } catch (e) {
       N_bias = 60; // fallback
     }
@@ -274,6 +286,10 @@ function calculate(inp) {
   const wire_len_bias = N_bias * N_cond_bias * lt_outer;
   const wire_R_bias   = R_CU * N_bias * lt_outer / (S_bias_Cu * N_cond_bias);
 
+  // ── Current density ────────────────────────────────────────────────────────
+  const J_main_Acm2 = (inp.I_main_rms_A / (S_main_Cu * N_cond_main)) * 1e-4;  // A/cm²
+  const J_bias_Acm2 = (inp.I_bias_max_A / (S_bias_Cu * N_cond_bias)) * 1e-4;  // A/cm²
+
   // ── Return design dict (all keys match Python run_interactive) ─────────────
   return {
     // design mode
@@ -362,9 +378,11 @@ function calculate(inp) {
     // resistance
     wire_len_main_m:          wire_len_main,
     R_main_winding_mOhm:      wire_R_main * 1e3,
+    J_main_Acm2,
     wire_len_bias_m:          wire_len_bias,
     wire_len_bias_per_leg_m:  wire_len_bias / 2,
     R_bias_winding_mOhm:      wire_R_bias * 1e3,
+    J_bias_Acm2,
     R_bias_per_leg_mOhm:      wire_R_bias * 1e3 / 2,
   };
 }

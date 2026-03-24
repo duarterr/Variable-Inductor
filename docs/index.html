@@ -1,6 +1,3 @@
-<!-- TODO: FIGURAS ajeitadas -->
-
-
 <!DOCTYPE html>
 <html lang="en">
 
@@ -269,7 +266,7 @@
                       data-tip="Fixed number of turns for the main (centre-leg) winding. The solver will find the centre-leg air gap that achieves L_nom.">N<sub>main</sub>
                       <span class="unit">(turns)</span></label>
                     <input type="number" id="N_main" value="16" min="1" step="1" />
-                    <span class="hint">Solver finds lg<sub>center</sub></span>
+                    <span class="hint" id="hint-N_main">Solver finds lg<sub>center</sub></span>
                   </div>
                 </div>
               </div>
@@ -281,7 +278,7 @@
                       data-tip="Fixed physical air gap in the centre leg (material removed). The solver will find the integer N_main that achieves L_nom.">lg<sub>center</sub>
                       <span class="unit">(mm)</span></label>
                     <input type="number" id="lg_center_mm" value="0.3" min="0.001" step="0.01" />
-                    <span class="hint">Solver finds N<sub>main</sub> (rounds up)</span>
+                    <span class="hint" id="hint-lg_center_mm">Solver finds N<sub>main</sub></span>
                   </div>
                 </div>
               </div>
@@ -293,6 +290,7 @@
                       data-tip="Number of turns for the main winding. Both N and lg are fixed; L is computed from the resulting reluctance circuit.">N<sub>main</sub>
                       <span class="unit">(turns)</span></label>
                     <input type="number" id="N_main_m3" value="16" min="1" step="1" />
+                    <span class="hint" id="hint-N_main_m3"></span>
                   </div>
                 </div>
                 <div class="form-row single">
@@ -301,7 +299,7 @@
                       data-tip="Centre-leg air gap. Both N and lg are fixed; L is computed from the resulting reluctance circuit.">lg<sub>center</sub>
                       <span class="unit">(mm)</span></label>
                     <input type="number" id="lg_center_mm_m3" value="0.3" min="0.001" step="0.01" />
-                    <span class="hint">Both fixed - L is computed, not targeted</span>
+                    <span class="hint" id="hint-lg_center_mm_m3">Both fixed — L is computed, not targeted</span>
                   </div>
                 </div>
               </div>
@@ -367,7 +365,7 @@
         </div><!-- /form-columns -->
 
         <!-- Calculate button -->
-        <button id="btn-calculate" type="button">Calculate Design</button>
+        <button id="btn-calculate" class="btn-action" type="button">Calculate Design</button>
         <div id="error-msg"></div>
 
       </div><!-- /panel-body -->
@@ -409,9 +407,7 @@
               </thead>
               <tbody id="summary-tbody"></tbody>
             </table>
-            <div class="export-row">
-              <button class="btn-export" id="btn-pdf" type="button">⬇ Download PDF</button>
-            </div>
+            <button class="btn-action" id="btn-pdf" type="button">⬇ Download PDF</button>
           </div>
         </div>
 
@@ -532,6 +528,84 @@
     document.getElementById("spacing_mm").addEventListener("input", updateCoreInfo);
     document.getElementById("thickness_mm").addEventListener("input", updateCoreInfo);
     updateCoreInfo();
+
+    // ── Live design suggestions ─────────────────────────────────────────────────
+    function updateSuggestions() {
+      const MU_0 = 4 * Math.PI * 1e-7;
+      const L_nom = parseFloat(document.getElementById("L_main_nom_uH").value) * 1e-6;
+      const I_pk = parseFloat(document.getElementById("I_main_pk_A").value);
+      const B_max = parseFloat(document.getElementById("B_main_max_T").value);
+      const kf = parseFloat(document.getElementById("kf_center").value) || 1.0;
+      const core = document.getElementById("core_name").value;
+
+      // Ae_center in m² from DB (coreW returns mm, coreH returns mm)
+      let Ae = NaN;
+      try { Ae = coreW(core, "center") * coreH(core) * 1e-6; } catch (e) { }
+
+      // Suggested N (linear: N = ceil(L_nom * I_pk / (B_max * Ae)))
+      const N_sug = (isFinite(L_nom) && isFinite(I_pk) && isFinite(B_max) && isFinite(Ae) && Ae > 0 && B_max > 0)
+        ? Math.ceil(L_nom * I_pk / (B_max * Ae))
+        : null;
+
+      // Suggested lg from current N_main input (linear: lg = μ₀ × kf × N² × Ae / L_nom, in mm)
+      function lgSugFromN(N) {
+        if (!isFinite(N) || N < 1 || !isFinite(L_nom) || L_nom <= 0 || !isFinite(Ae) || Ae <= 0) return null;
+        return MU_0 * kf * N * N * Ae / L_nom * 1e3;  // mm
+      }
+
+      // Suggested N from current lg_center input (linear: N = ceil(sqrt(L_nom * lg / (μ₀ × kf × Ae))))
+      function NSugFromLg(lg_mm) {
+        const lg = lg_mm * 1e-3;
+        if (!isFinite(lg) || lg <= 0 || !isFinite(L_nom) || L_nom <= 0 || !isFinite(Ae) || Ae <= 0) return null;
+        return Math.ceil(Math.sqrt(L_nom * lg / (MU_0 * kf * Ae)));
+      }
+
+      // Mode 1 hint: suggested N under the N_main input
+      const hN = document.getElementById("hint-N_main");
+      if (hN) {
+        const lg = lgSugFromN(parseInt(document.getElementById("N_main").value));
+        hN.textContent = N_sug != null
+          ? `Suggested: ${N_sug} turns  |  lg ≈ ${lgSugFromN(N_sug) != null ? lgSugFromN(N_sug).toFixed(3) + " mm" : "—"}`
+          : "Solver finds lgcenter";
+      }
+
+      // Mode 2 hint: suggested N from the current lg value
+      const hLg = document.getElementById("hint-lg_center_mm");
+      if (hLg) {
+        const lg_mm = parseFloat(document.getElementById("lg_center_mm").value);
+        const N_from_lg = NSugFromLg(lg_mm);
+        hLg.textContent = N_from_lg != null
+          ? `Suggested: lg = ${lgSugFromN(N_sug) != null ? lgSugFromN(N_sug).toFixed(3) + " mm" : "—"}  |  N ≈ ${N_from_lg}`
+          : "Solver finds Nmain";
+      }
+
+      // Mode 3 hints: both N and lg shown side-by-side
+      const hN3 = document.getElementById("hint-N_main_m3");
+      if (hN3) {
+        hN3.textContent = N_sug != null
+          ? `Suggested: ${N_sug} turns`
+          : "";
+      }
+      const hLg3 = document.getElementById("hint-lg_center_mm_m3");
+      if (hLg3) {
+        const lg_sug = lgSugFromN(N_sug);
+        hLg3.textContent = lg_sug != null
+          ? `Suggested: ${lg_sug.toFixed(3)} mm  |  Both fixed — L is computed`
+          : "Both fixed — L is computed";
+      }
+    }
+
+    // Trigger on any change to the relevant fields
+    ["L_main_nom_uH", "I_main_pk_A", "B_main_max_T", "kf_center",
+      "N_main", "lg_center_mm"].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener("input", updateSuggestions);
+      });
+    document.getElementById("core_name").addEventListener("change", updateSuggestions);
+    document.querySelectorAll("input[name='design_mode']").forEach(r =>
+      r.addEventListener("change", updateSuggestions)
+    );
+    updateSuggestions();
 
     // ── Material selector show/hide ─────────────────────────────────────────────
     document.getElementById("mat_name").addEventListener("change", function () {
@@ -742,6 +816,10 @@
       row("B_center (pk)", design.B_center_mT.toFixed(1), "mT",
         design.B_center_mT <= design.B_main_max_T * 1000);
       row("Bdc_max (outer)", design.Bdc_max_mT.toFixed(1), "mT");
+      row("J_main", design.J_main_Acm2.toFixed(1), "A/cm²",
+        design.J_main_Acm2 <= design.J_max_Acm2);
+      row("J_bias", design.J_bias_Acm2.toFixed(1), "A/cm²",
+        design.J_bias_Acm2 <= design.J_max_Acm2);
       row("R_main", design.R_main_winding_mOhm.toFixed(2), "mΩ");
       row("R_bias", design.R_bias_winding_mOhm.toFixed(2), "mΩ");
     }
@@ -874,8 +952,8 @@
 
           // Core geometry SVG - fetch and inject inline for full rendering fidelity
           const svgFile = design.coil_length === "full"
-            ? "../data/Core_Geometry_Full.svg"
-            : "../data/Core_Geometry_Half.svg";
+            ? "assets/Core_Geometry_Full.svg"
+            : "assets/Core_Geometry_Half.svg";
           const svgContainer = document.getElementById("svg-core-container");
           svgContainer.innerHTML = '<span style="color:#aaa;font-size:11px;padding:12px;display:block;">Loading diagram…</span>';
           fetch(svgFile)
