@@ -89,6 +89,7 @@ function plotDcAnalysis(design, divId, nPoints = 300) {
     paper_bgcolor: "white",
     margin: { l: 60, r: 70, t: 80, b: 55 },
     grid: { rows: 1, columns: 1 },
+    height: 350,
   };
 
   Plotly.newPlot(divId, [traceLdc, traceLeff, traceBdc], layout, { responsive: true });
@@ -168,10 +169,11 @@ function plotAcAnalysis(design, divId, IacFractions = [0.25, 0.5, 1.0], nPoints 
       tickformat: ".0f",
       domain: [0.0, 0.46],
     },
-    legend: { x: 0.98, xanchor: "right", y: 0.98 },
+    legend: { x: 0.98, xanchor: "right", y: 0.98, tracegroupgap: 2 },
     plot_bgcolor: "white",
     paper_bgcolor: "white",
     margin: { l: 65, r: 30, t: 90, b: 55 },
+    height: 600,
   };
 
   Plotly.newPlot(divId, [...tracesLac, ...tracesBac], layout, { responsive: true });

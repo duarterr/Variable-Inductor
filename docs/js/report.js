@@ -124,7 +124,12 @@ async function generatePDF(design, dcDivId = "plot-dc", acDivId = "plot-ac") {
     h2(panelTitle);
     checkY(10);
     try {
-      const svgData = new XMLSerializer().serializeToString(el);
+      // Clone and strip the embedded mxGraph XML (draw.io stores the original
+      // diagram data in the "content" attribute; browsers may re-render from it,
+      // ignoring our text substitutions).
+      const svgClone = el.cloneNode(true);
+      svgClone.removeAttribute("content");
+      const svgData = new XMLSerializer().serializeToString(svgClone);
       const blob = new Blob([svgData], { type: "image/svg+xml;charset=utf-8" });
       const url = URL.createObjectURL(blob);
       await new Promise((resolve, reject) => {
