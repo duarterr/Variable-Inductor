@@ -422,13 +422,17 @@ body {
 
 /* ── Core geometry SVG ────────────────────────────────────── */
 .svg-core-wrapper {
-  text-align: center;
   padding: 8px 0 4px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
 }
 
-.svg-core-wrapper img {
+.svg-core-wrapper img,
+.svg-core-wrapper svg {
   max-width: 100%;
   height: auto;
+  display: block;
 }
 
 

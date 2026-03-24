@@ -983,22 +983,54 @@
             "spacing": `${design.spacing_mm.toFixed(2)} mm`,
           };
 
+          // Global store: processed SVG text per container id, used by report.js
+          window._svgData = window._svgData || {};
+
           function injectSvg(container, replacements) {
+            const containerId = container.id;
             container.innerHTML = '<span style="color:#aaa;font-size:11px;padding:12px;display:block;">Loading…</span>';
             fetch(svgFile)
               .then(r => { if (!r.ok) throw new Error(r.statusText); return r.text(); })
               .then(svgText => {
+                // --- Text-level substitution for reliable PDF capture --------
+                // Do replacements directly on the SVG source string so that
+                // report.js can use this text without re-parsing from the DOM.
+                let pdfSvg = svgText;
+                if (replacements) {
+                  for (const [key, val] of Object.entries(replacements)) {
+                    const escaped = val
+                      .replace(/&/g, "&amp;")
+                      .replace(/</g, "&lt;")
+                      .replace(/>/g, "&gt;");
+                    pdfSvg = pdfSvg.split(`>${key}</text>`).join(`>${escaped}</text>`);
+                  }
+                }
+                window._svgData[containerId] = pdfSvg;
+
+                // --- DOM injection for live display --------------------------
                 const parser = new DOMParser();
                 const doc = parser.parseFromString(svgText, "image/svg+xml");
                 const err = doc.querySelector("parsererror");
                 if (err) throw new Error("SVG parse error");
                 const svg = doc.documentElement;
 
-                // Substitute text labels if replacements provided
                 if (replacements) {
-                  svg.querySelectorAll("text").forEach(el => {
-                    const key = el.textContent.trim();
-                    if (replacements[key] !== undefined) el.textContent = replacements[key];
+                  // Update both <text> fallback AND the visible <foreignObject>
+                  // innermost div (which browsers render in the live DOM).
+                  svg.querySelectorAll("switch").forEach(sw => {
+                    const textEl = sw.querySelector("text");
+                    if (!textEl) return;
+                    const key = textEl.textContent.trim();
+                    const val = replacements[key];
+                    if (val === undefined) return;
+                    textEl.textContent = val;
+                    // Traverse foreignObject → div → div → div (innermost)
+                    const fo = sw.querySelector("foreignObject");
+                    if (fo) {
+                      let inner = fo.firstElementChild;
+                      while (inner && inner.firstElementChild) inner = inner.firstElementChild;
+                      if (inner) inner.textContent = val;
+                    }
                   });
                 }
 

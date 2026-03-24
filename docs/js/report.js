@@ -117,35 +117,92 @@ async function generatePDF(design, dcDivId = "plot-dc", acDivId = "plot-ac") {
     }
   }
 
-  // Capture an SVG container and embed it as PNG
-  async function addSvgImage(containerId, panelTitle, widthFrac = 0.95) {
-    const el = document.getElementById(containerId)?.querySelector("svg");
-    if (!el) return;
+  // Embed an SVG diagram as PNG in the PDF, with optional label substitutions.
+  //
+  // svgUrl:      path to the SVG file (relative to the page)
+  // containerId: id of the DOM wrapper that injectSvg used (DOM/cache fallback)
+  // panelTitle:  section heading text
+  // replacements:{ "key": "value" } — replaces <text>key</text> in SVG source
+  //
+  // Rendering pipeline:
+  //   SVG text (string-replaced) → base64 data URL → <img> → canvas → PNG → PDF
+  //
+  // Fallback chain for obtaining SVG text:
+  //   1. fetch() + string replacement  (works on HTTP servers)
+  //   2. window._svgData[containerId]  (cached by injectSvg when fetch succeeded)
+  //   3. XMLSerializer on live DOM SVG (already has <text> replacements from injectSvg)
+  async function addSvgImage(svgUrl, containerId, panelTitle, replacements = null, widthFrac = 0.95) {
     h2(panelTitle);
     checkY(10);
+
+    // ── Get SVG text ─────────────────────────────────────────────────────────
+    let svgText = null;
+
     try {
-      // Clone and strip the embedded mxGraph XML (draw.io stores the original
-      // diagram data in the "content" attribute; browsers may re-render from it,
-      // ignoring our text substitutions).
-      const svgClone = el.cloneNode(true);
-      svgClone.removeAttribute("content");
-      const svgData = new XMLSerializer().serializeToString(svgClone);
-      const blob = new Blob([svgData], { type: "image/svg+xml;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
+      const r = await fetch(svgUrl);
+      if (r.ok) {
+        let raw = await r.text();
+        raw = raw.replace(/<\?xml[^?]*\?>\s*/i, "");
+        raw = raw.replace(/<!DOCTYPE[^>]*>\s*/i, "");
+        // Remove draw.io content attr (huge base64 XML, not needed for rendering)
+        raw = raw.replace(/\s+content="[^"]*"/, "");
+        // Force light-mode colors: replace light-dark(light, dark) → light value.
+        // Without this, canvas may resolve to the dark value (white lines on white bg).
+        raw = raw.replace(/light-dark\(([^,)]+),\s*[^)]+\)/g, "$1");
+        // Also lock color-scheme to light in the root style
+        raw = raw.replace(/color-scheme:\s*light\s+dark/g, "color-scheme: light");
+        if (replacements) {
+          for (const [key, val] of Object.entries(replacements)) {
+            // Canvas drawImage skips <foreignObject> (security); SVG <switch>
+            // falls back to <text>.  Replace BOTH so every renderer works.
+            raw = raw.split(`>${key}</text>`).join(`>${val}</text>`);
+            raw = raw.split(`>${key}</div></div></div></foreignObject>`)
+                     .join(`>${val}</div></div></div></foreignObject>`);
+          }
+        }
+        svgText = raw;
+      }
+    } catch (_) { /* fetch blocked (e.g. file:// protocol) */ }
+
+    if (!svgText && window._svgData?.[containerId]) {
+      svgText = window._svgData[containerId];
+    }
+
+    if (!svgText) {
+      const el = document.getElementById(containerId)?.querySelector("svg");
+      if (el) {
+        const clone = el.cloneNode(true);
+        clone.removeAttribute("content");
+        svgText = new XMLSerializer().serializeToString(clone);
+      }
+    }
+
+    if (!svgText) { sub(`[${panelTitle}: SVG not available]`); return; }
+
+    // ── Render to canvas → PNG → PDF ─────────────────────────────────────────
+    try {
+      const bytes = new TextEncoder().encode(svgText);
+      let binary = "";
+      for (let i = 0; i < bytes.length; i += 8192)
+        binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
+      const dataUrl = `data:image/svg+xml;base64,${btoa(binary)}`;
+
       await new Promise((resolve, reject) => {
         const img = new Image();
         img.onload = () => {
           try {
-            const W = img.naturalWidth || 1060;
-            const H = img.naturalHeight || 252;
+            const W = img.naturalWidth  || 1060;
+            const H = img.naturalHeight || 322;
             const pdfW = CONTENT * widthFrac;
             const pdfH = pdfW * (H / W);
-            const cv = document.createElement("canvas");
-            cv.width = W * 2; cv.height = H * 2;
-            const cx = cv.getContext("2d");
-            cx.fillStyle = "#fff"; cx.fillRect(0, 0, cv.width, cv.height);
-            cx.scale(2, 2); cx.drawImage(img, 0, 0, W, H);
-            URL.revokeObjectURL(url);
+            const cv  = document.createElement("canvas");
+            cv.width  = W * 2;
+            cv.height = H * 2;
+            const cx  = cv.getContext("2d");
+            cx.fillStyle = "#fff";
+            cx.fillRect(0, 0, cv.width, cv.height);
+            cx.scale(2, 2);
+            cx.drawImage(img, 0, 0, W, H);
             const png = cv.toDataURL("image/png");
             checkY(pdfH + 8);
             doc.addImage(png, "PNG", MARGIN + (CONTENT - pdfW) / 2, y, pdfW, pdfH);
@@ -153,8 +210,8 @@ async function generatePDF(design, dcDivId = "plot-dc", acDivId = "plot-ac") {
             resolve();
           } catch (e2) { reject(e2); }
         };
-        img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("img load failed")); };
-        img.src = url;
+        img.onerror = () => reject(new Error("SVG render failed"));
+        img.src = dataUrl;
       });
     } catch (e) {
       sub(`[${panelTitle}: ${e.message}]`);
@@ -246,9 +303,27 @@ async function generatePDF(design, dcDivId = "plot-dc", acDivId = "plot-ac") {
     ]
   );
 
+  // SVG file and substitution map (mirrors index.html injectSvg logic)
+  const svgFile = design.coil_length === "full"
+    ? "assets/Core_Geometry_Full.svg"
+    : "assets/Core_Geometry_Half.svg";
+  const svgValues = {
+    "le_center":  `${(design.le_center_m  * 1e3).toFixed(2)} mm`,
+    "le_outer":   `${(design.le_outer_m   * 1e3).toFixed(2)} mm`,
+    "le_h":       `${(design.le_h_m       * 1e3).toFixed(2)} mm`,
+    "lg_center":  `${design.lg_center_mm.toFixed(3)} mm`,
+    "lg_outer":   `${design.lg_outer_mm.toFixed(3)} mm`,
+    "Ae_outer":   `${(design.Ae_outer_m2  * 1e6).toFixed(2)} mm2`,
+    "Ae_center":  `${(design.Ae_center_m2 * 1e6).toFixed(2)} mm2`,
+    "Ae_h":       `${(design.Ae_h_m2      * 1e6).toFixed(2)} mm2`,
+    "Aw":         `${(design.Aw_m2        * 1e6).toFixed(2)} mm2`,
+    "thickness":  `${design.thickness_mm.toFixed(2)} mm`,
+    "spacing":    `${design.spacing_mm.toFixed(2)} mm`,
+  };
+
   // SVG diagrams - same page, right after air gaps
-  await addSvgImage("svg-core-ref", "Core Geometry - Symbol reference");
-  await addSvgImage("svg-core-values", "Core Geometry - Calculated values");
+  await addSvgImage(svgFile, "svg-core-ref",    "Core Geometry - Symbol reference", null);
+  await addSvgImage(svgFile, "svg-core-values", "Core Geometry - Calculated values", svgValues);
 
   // ---------------------------------------------------------------------------
   // PAGE 2 - Windings
