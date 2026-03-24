@@ -6,7 +6,7 @@ Each entry: [AWG_number, S_Cu (m²), S_total (m²)]
     S_Cu    : bare copper cross-section area
     S_total : total wire cross-section (copper + insulation)
 
-Data covers AWG 41 (thinnest) → AWG 10 (thickest).
+Data covers AWG 41 (thinnest) -> AWG 10 (thickest).
 """
 
 # Copper resistivity at 20 °C (Ω·m)
@@ -70,7 +70,7 @@ def find_awg_geq(s_target_m2: float, col: int = COL_S_CU) -> list:
 
     If no wire qualifies, returns the thickest available wire (AWG 10).
     """
-    for row in AWG_DATA:  # AWG 41 → 10 (thinnest first)
+    for row in AWG_DATA:  # AWG 41 -> 10 (thinnest first)
         if row[col] >= s_target_m2:
             return row
     return AWG_DATA[-1]  # fallback: AWG 10 (thickest)

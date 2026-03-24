@@ -13,12 +13,12 @@ Column layout per core entry (all in mm):
     Window_L  : winding window length
 
 NOTE on SMath column mapping (1-based indices in the original .sm):
-    Col_Core_W=2 → Core_L (confusingly named; it is the long dimension)
-    Col_Core_L=3 → Core_W (the cross dimension)
-    Col_Core_H=4 → Core_H
-    Col_Center_W=5 → Center_W
-    Col_Outer_Sep=6 → Outer_Sep
-    Col_Window_L=7 → Window_L
+    Col_Core_W=2 -> Core_L (confusingly named; it is the long dimension)
+    Col_Core_L=3 -> Core_W (the cross dimension)
+    Col_Core_H=4 -> Core_H
+    Col_Center_W=5 -> Center_W
+    Col_Outer_Sep=6 -> Outer_Sep
+    Col_Window_L=7 -> Window_L
 
     The Python dict uses clear names, not the confusing SMath column names.
 """
@@ -37,6 +37,10 @@ CORES: dict[str, list[float]] = {
     "E 30/15/7 TDK": [30.0, 15.2, 7.3, 7.2, 19.5, 9.7],
     "E 32/16/19 TDK": [32.0, 16.4, 9.5, 9.5, 22.7, 11.2],
     "E 40/16/12 TDK": [40.6, 16.5, 12.5, 12.5, 28.6, 10.5],
+    # EFD 25/13/9 — Center_W ajustado para equivalência com núcleo E:
+    #   Ae real = Center_W_efd × h_central = 11.4 × 5.2 = 59.28 mm²
+    #   Center_W_eq = Ae_real / Core_H = 59.28 / 9.1 ≈ 6.51 mm
+    "EFD 25/13/9 (CUSTOM)": [25.0, 12.5, 9.1, 6.51, 18.7, 9.3],
 }
 
 
@@ -48,8 +52,8 @@ def core_W(core_name: str, leg: str = "center") -> float:
     Width (mm) of the requested leg, matching SMath Core_W(Row, Leg).
 
     SMath formula:
-        center → el(Col_Center_W)
-        other  → (el(Col_Core_W) - el(Col_Outer_Sep)) / 2
+        center -> el(Col_Center_W)
+        other  -> (el(Col_Core_W) - el(Col_Outer_Sep)) / 2
                  = (Core_L - Outer_Sep) / 2          [outer leg width]
     """
     d = CORES[core_name]
@@ -70,8 +74,8 @@ def core_L(core_name: str, length: str = "full") -> float:
     """
     Magnetic path length along the vertical legs (mm).
     SMath Core_L(Row, Length):
-        full  → 2 * el(Col_Core_L)   [= 2 * Core_W, the cross dimension]
-        other → el(Col_Core_L)        [= Core_W]
+        full  -> 2 * el(Col_Core_L)   [= 2 * Core_W, the cross dimension]
+        other -> el(Col_Core_L)        [= Core_W]
     """
     d = CORES[core_name]
     if length == "full":

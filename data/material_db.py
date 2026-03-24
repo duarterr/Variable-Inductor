@@ -18,10 +18,6 @@ as specified in the datasheet.
 MATERIALS: dict[str, tuple] = {
     #  name          description                    mu_i    k1       k2      k3
     "N87 (TDK)": ("TDK EPCOS N87, MnZn, ~100 kHz", 2200, 0.062, 42.995, 302.904),
-    "N97 (TDK)": ("TDK EPCOS N97, MnZn, ~100 kHz", 2300, 1.05, 28.0, 120.0),
-    "N49 (TDK)": ("TDK EPCOS N49, MnZn, ~200 kHz", 1500, 1.4, 35.0, 90.0),
-    "PC95 (TDK)": ("TDK PC95,      MnZn, ~100 kHz", 3300, 0.85, 22.0, 140.0),
-    "3C95 (Ferroxcube)": ("Ferroxcube 3C95, MnZn", 3000, 0.9, 24.0, 135.0),
     "User-defined": ("User-defined coefficients", None, None, None, None),
 }
 

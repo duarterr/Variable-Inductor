@@ -56,7 +56,7 @@ from data.core_db import (
     coil_former_W,
     coil_former_L,
 )
-from data.wire_db import COL_S_CU, COL_S_TOTAL, find_awg_geq, find_awg_match
+from data.wire_db import AWG_DATA, COL_AWG, COL_S_CU, COL_S_TOTAL, find_awg_geq, find_awg_match
 from data.wire_db import R_CU
 from data.material_db import MATERIALS
 from scipy.optimize import brentq
@@ -83,7 +83,7 @@ DEFAULTS = {
     "kw": 0.70,  # Coil former fill factor
     "J_max_Acm2": 450.0,  # Max current density (A/cm2)
     # Mechanical
-    "coil_length": "half",  # Winding span: "full" or "half"
+    "coil_length": "full",  # Winding span: "full" or "half"
     "spacing_mm": 0.25,  # Core-to-former clearance (mm)
     "thickness_mm": 0.75,  # Former wall thickness (mm)
     "lg_outer_mm": 0.01,  # Outer-leg air gap (mm)
@@ -219,18 +219,19 @@ def _sec(title):
     print(f"-- {title} " + "-" * pad)
 
 
-def _ask(prompt, default, cast=float, choices=None):
+def _ask(prompt, default, cast=float, choices=None, choices_hint=None):
     """
     Print a prompt showing the default in [brackets].
     Returns default if user presses Enter; otherwise parses and validates input.
 
-    cast    : callable to convert the string (float, int, str)
-    choices : optional list/set of accepted values
+    cast         : callable to convert the string (float, int, str)
+    choices      : optional set/list of accepted values (used for validation)
+    choices_hint : optional string to display instead of the full choices list
     """
     hint = (
         f"[default: {default}]"
         if choices is None
-        else f"(options: {choices}) [default: {default}]"
+        else f"({choices_hint or f'options: {choices}'}) [default: {default}]"
     )
     while True:
         raw = input(f"  {prompt} {hint}: ").strip()
@@ -691,8 +692,15 @@ def run_interactive():
         f"  S_skin (at f_sw) : {S_skin_ac*1e6:.4f} mm2  ->  max AWG {awg_skin_row[0]}"
     )
 
-    # Default = skin limit (thinnest allowed) - use parallel conductors for current
-    AWG_ac = _ask("Choose AWG for ac winding", awg_skin_row[0], int)
+    # Default = thinnest wire between ampacity and skin constraints (highest AWG number)
+    _awg_valid = {r[COL_AWG] for r in AWG_DATA}
+    AWG_ac = _ask(
+        "Choose AWG for ac winding",
+        max(awg_req_row[0], awg_skin_row[0]),
+        int,
+        choices=_awg_valid,
+        choices_hint="AWG 10..41",
+    )
     awg_final_row = find_awg_match(AWG_ac)
     S_AWG_Cu = awg_final_row[COL_S_CU]
     S_AWG_total = awg_final_row[COL_S_TOTAL]
@@ -802,7 +810,13 @@ def run_interactive():
     print(
         f"  S_req (ampacity)  : {S_req_bias*1e6:.4f} mm2  ->  min AWG {awg_req_bias[0]}"
     )
-    AWG_bias = _ask("Choose AWG for bias winding", awg_req_bias[0], int)
+    AWG_bias = _ask(
+        "Choose AWG for bias winding",
+        awg_req_bias[0],
+        int,
+        choices=_awg_valid,
+        choices_hint="AWG 10..41",
+    )
     awg_bias_row = find_awg_match(AWG_bias)
     S_bias_Cu = awg_bias_row[COL_S_CU]
     S_bias_total = awg_bias_row[COL_S_TOTAL]
@@ -998,6 +1012,10 @@ def run_interactive():
         # resistance
         wire_len_m=wire_len_ac,
         R_winding_mOhm=wire_R_ac * 1e3,
+        wire_len_bias_m=wire_len_bias,
+        wire_len_bias_per_leg_m=wire_len_bias / 2,
+        R_bias_winding_mOhm=wire_R_bias * 1e3,
+        R_bias_per_leg_mOhm=wire_R_bias * 1e3 / 2,
     )
 
 
@@ -1196,6 +1214,12 @@ def generate_report(
         [
             ["Parameter", "Symbol", "Value", "Unit"],
             [
+                "Nominal inductance (target, I_bias=0)",
+                "L_nom",
+                f"{d['L_nom_uH']:.1f}",
+                "uH",
+            ],
+            [
                 "Minimum inductance (target, I_bias=max)",
                 "L_min",
                 f"{d['L_min_uH']:.1f}",
@@ -1393,6 +1417,10 @@ def generate_report(
                 "%",
             ],
             ["Mean turn length (outer)", "lt_outer", f"{d['lt_outer_mm']:.2f}", "mm"],
+            ["Wire length (per leg)", "l_bias/leg", f"{d['wire_len_bias_per_leg_m']:.4f}", "m"],
+            ["Wire length (total)", "l_bias", f"{d['wire_len_bias_m']:.4f}", "m"],
+            ["Winding resistance (per leg)", "R_bias/leg", f"{d['R_bias_per_leg_mOhm']:.4f}", "mOhm"],
+            ["Winding resistance (total)", "R_bias", f"{d['R_bias_winding_mOhm']:.4f}", "mOhm"],
             ["mu_r needed @ I_bias_max", "mu_r_req", f"{d['mu_r_needed']:.1f}", "-"],
         ]
     )
@@ -1733,6 +1761,7 @@ def plot_dc_analysis(design, save_path, n_points=300):
         I_arr, Bdc_mT, color=c3, linewidth=1.4, linestyle=":", label=r"$B_{DC,outer}$"
     )
     ax2.set_ylabel("$B_{DC,outer}$ (mT)", color=c3, fontsize=11)
+    ax2.set_ylim(bottom=0)
     ax2.tick_params(axis="y", labelcolor=c3)
 
     # Combined legend
@@ -1747,6 +1776,24 @@ def plot_dc_analysis(design, save_path, n_points=300):
         fontsize=10,
     )
     ax1.grid(True, linestyle="--", alpha=0.35)
+
+    # Force data maxima onto y-axis ticks
+    _ymax_L = max(float(Ldc_uH.max()), float(Leff_uH.max()))
+    _ymax_B = float(Bdc_mT.max())
+    fig.canvas.draw()
+    for _ax, _ymax in ((ax1, _ymax_L), (ax2, _ymax_B)):
+        _ylim = _ax.get_ylim()
+        _span = _ylim[1] - _ylim[0]
+        _ticks = [
+            t
+            for t in _ax.get_yticks()
+            if _ylim[0] <= t <= _ylim[1] and abs(t - _ymax) > 0.05 * _span
+        ]
+        _ax.set_yticks(sorted(_ticks + [_ymax]))
+    ax1.yaxis.set_major_formatter(ticker.FormatStrFormatter("%.0f"))
+    ax2.yaxis.set_major_formatter(ticker.FormatStrFormatter("%.0f"))
+    ax2.tick_params(axis="y", labelcolor=c3)
+
     fig.tight_layout()
     fig.savefig(save_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
@@ -2000,6 +2047,22 @@ def plot_ac_analysis(design, save_path, Iac_fractions=None, n_points=300):
     ax2.yaxis.set_major_formatter(ticker.FormatStrFormatter("%.0f"))
     ax2.legend(fontsize=9, loc="upper right")
     ax2.grid(True, linestyle="--", alpha=0.35)
+
+    # Force data maxima onto y-axis ticks
+    _ymax_L = float(np.max(Lac_matrix) * 1e6)
+    _ymax_B = float(np.max(Bac_matrix) * 1e3)
+    fig.canvas.draw()
+    for _ax, _ymax in ((ax1, _ymax_L), (ax2, _ymax_B)):
+        _ylim = _ax.get_ylim()
+        _span = _ylim[1] - _ylim[0]
+        _ticks = [
+            t
+            for t in _ax.get_yticks()
+            if _ylim[0] <= t <= _ylim[1] and abs(t - _ymax) > 0.05 * _span
+        ]
+        _ax.set_yticks(sorted(_ticks + [_ymax]))
+    ax1.yaxis.set_major_formatter(ticker.FormatStrFormatter("%.0f"))
+    ax2.yaxis.set_major_formatter(ticker.FormatStrFormatter("%.0f"))
 
     fig.tight_layout()
     fig.savefig(save_path, dpi=300, bbox_inches="tight")
