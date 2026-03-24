@@ -6,11 +6,11 @@ An interactive console tool for designing variable inductors using E-cores with 
 
 ```
 E-core
-├── Centre leg  →  AC inductor winding  (N_ac turns)
-└── Outer legs  →  Bias winding         (N_bias/2 turns each, series-aiding)
+├── Centre leg  →  Main winding  (N_main turns)
+└── Outer legs  →  Bias winding  (N_bias/2 turns each, series-aiding)
 ```
 
-The inductance is controlled by the DC bias current applied to the outer-leg windings, which saturates the outer legs and varies the effective permeability seen by the AC winding.
+The inductance is controlled by the DC bias current applied to the outer-leg windings, which saturates the outer legs and varies the effective permeability seen by the main winding.
 
 ## Air-gap Conventions
 
@@ -59,8 +59,8 @@ The tool presents an interactive console where you can review and override defau
 
 | Parameter  | Description |
 |---|---|
-| `L_nom_uH` | Nominal inductance at zero bias current |
-| `L_min_uH` | Minimum inductance at maximum bias current |
+| `L_main_nom_uH` | Nominal inductance at zero bias current |
+| `L_main_min_uH` | Minimum inductance at maximum bias current |
 | `f_sw_kHz` | Switching frequency |
 | `I_rms_A` | RMS current |
 | `I_pk_A` | Peak current |

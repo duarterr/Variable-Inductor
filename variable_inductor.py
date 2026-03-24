@@ -2,7 +2,7 @@
 variable_inductor.py - Variable inductor design tool (interactive console)
 
 Topology: E-core with multi-bobbin 3D-printed coil formers
-  · Centre leg  -> ac inductor winding (N_ac turns)
+  · Centre leg  -> ac inductor winding (N_main turns)
   · Outer legs  -> bias winding (N_bias / 2 turns each, series-aiding)
 
 Air-gap conventions
@@ -56,7 +56,14 @@ from data.core_db import (
     coil_former_W,
     coil_former_L,
 )
-from data.wire_db import AWG_DATA, COL_AWG, COL_S_CU, COL_S_TOTAL, find_awg_geq, find_awg_match
+from data.wire_db import (
+    AWG_DATA,
+    COL_AWG,
+    COL_S_CU,
+    COL_S_TOTAL,
+    find_awg_geq,
+    find_awg_match,
+)
 from data.wire_db import R_CU
 from data.material_db import MATERIALS
 from scipy.optimize import brentq
@@ -71,19 +78,19 @@ import tempfile
 
 DEFAULTS = {
     # Inductance targets
-    "L_nom_uH": 60.0,  # Nominal inductance (uH, @ I_bias=0)
-    "L_min_uH": 60 * 0.25,  # Minimal inductance (uH, @ I_bias_max)
+    "L_main_nom_uH": 60.0,  # Nominal inductance (uH, @ I_bias=0)
+    "L_main_min_uH": 60 * 0.1,  # Minimal inductance (uH, @ I_bias_max)
     # Electrical specifications
     "f_sw_kHz": 100.0,  # Switching frequency (kHz)
-    "I_rms_A": 1.3,  # RMS current (A)
-    "I_pk_A": 3.4,  # Peak current (A)
-    "B_max_T": 0.35,  # Max flux density (T @ I_pk)
+    "I_main_rms_A": 1.3,  # RMS current (A)
+    "I_main_pk_A": 3.4,  # Peak current (A)
+    "B_main_max_T": 0.35,  # Max flux density (T @ I_pk)
     "I_bias_max_A": 0.5,  # Max bias current (A)
     # Wire / thermal
-    "kw": 0.70,  # Coil former fill factor
+    "kw": 0.7854,  # Coil former fill factor (pi / 4 = Maximum possible)
     "J_max_Acm2": 450.0,  # Max current density (A/cm2)
     # Mechanical
-    "coil_length": "full",  # Winding span: "full" or "half"
+    "coil_length": "half",  # Winding span: "full" or "half"
     "spacing_mm": 0.25,  # Core-to-former clearance (mm)
     "thickness_mm": 0.75,  # Former wall thickness (mm)
     "lg_outer_mm": 0.01,  # Outer-leg air gap (mm)
@@ -157,7 +164,7 @@ def solve_B_dc(
 
 
 def L_vs_Ibias(
-    N_ac: int,
+    N_main: int,
     I_pk_A: float,
     Ae_center_m2: float,
     le_center_m: float,
@@ -176,7 +183,7 @@ def L_vs_Ibias(
     n_points: int = 200,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    Compute L_ac (H) as a function of DC bias current I_bias (A).
+    Compute L_main (H) as a function of DC bias current I_bias (A).
     """
     Rg_outer = lg_outer_m / (MU_0 * Ae_outer_m2)
 
@@ -196,7 +203,7 @@ def L_vs_Ibias(
         Req_outer_nl = Rc_h_nl + Rc_outer_nl + Rg_outer
 
         Req_total = Req_outer_nl / 2.0 + Req_center
-        L_arr[i] = N_ac**2 / Req_total
+        L_arr[i] = N_main**2 / Req_total
 
     return I_arr, L_arr, B_arr
 
@@ -351,22 +358,24 @@ def run_interactive():
     print()
 
     # -- 1. Inductance targets -------------------------------------------------
-    _sec("1 · AC winding inductance targets")
+    _sec("1 · Main winding inductance targets")
 
-    L_nom_uH = _ask(
-        "Nominal inductance L_nom (uH, @ I_bias=0)", DEFAULTS["L_nom_uH"], float
+    L_main_nom_uH = _ask(
+        "Nominal inductance L_nom (uH, @ I_bias=0)", DEFAULTS["L_main_nom_uH"], float
     )
-    L_min_uH = _ask(
-        "Minimal inductance L_min (uH, @ I_bias_max)", DEFAULTS["L_min_uH"], float
+    L_main_min_uH = _ask(
+        "Minimal inductance L_min (uH, @ I_bias_max)", DEFAULTS["L_main_min_uH"], float
     )
     print()
 
     # -- 2. Electrical specifications -----------------------------------------
     _sec("2 · Electrical specifications")
     f_sw_kHz = _ask("Switching frequency f_sw (kHz)", DEFAULTS["f_sw_kHz"], float)
-    I_rms_A = _ask("RMS current I_rms (A)", DEFAULTS["I_rms_A"], float)
-    I_pk_A = _ask("Peak current I_pk (A)", DEFAULTS["I_pk_A"], float)
-    B_max_T = _ask("Max flux density B_max (T @ I_pk)", DEFAULTS["B_max_T"], float)
+    I_main_rms_A = _ask("RMS current I_main_rms (A)", DEFAULTS["I_main_rms_A"], float)
+    I_main_pk_A = _ask("Peak current I_main_pk (A)", DEFAULTS["I_main_pk_A"], float)
+    B_main_max_T = _ask(
+        "Max flux density B_main_max (T @ I_main_pk)", DEFAULTS["B_main_max_T"], float
+    )
     I_bias_max_A = _ask(
         "Max bias current I_bias_max (A)", DEFAULTS["I_bias_max_A"], float
     )
@@ -445,8 +454,8 @@ def run_interactive():
     print()
 
     # -- SI conversions --------------------------------------------------------
-    L_nom = L_nom_uH * 1e-6
-    L_min = L_min_uH * 1e-6
+    L_nom = L_main_nom_uH * 1e-6
+    L_min = L_main_min_uH * 1e-6
     f_sw = f_sw_kHz * 1e3
     J_max = J_max_Acm2 * 1e4
     spacing = spacing_mm * 1e-3
@@ -456,7 +465,7 @@ def run_interactive():
     # -- 6. Core selection -----------------------------------------------------
     _sec("6 · Core selection")
     # Quick AeAw estimate for guidance (uses L_nom, standard kw/B_max/J_max defaults)
-    AeAw_rec = L_nom * I_pk_A * I_rms_A / (kw * B_max_T * J_max)
+    AeAw_rec = L_nom * I_main_pk_A * I_main_rms_A / (kw * B_main_max_T * J_max)
     core_name = _pick_core(AeAw_rec * 1e12)
 
     # -- Core geometry ---------------------------------------------------------
@@ -508,16 +517,16 @@ def run_interactive():
     print()
 
     # -- 7. Design mode fork ---------------------------------------------------
-    #   Mode 1: user sets N_ac  -> solver finds the required lg_center
-    #   Mode 2: user sets lg_center -> solver finds the required N_ac
-    _sec("7 · AC winding design mode")
-    print("  [1] Fix N_ac      -> solver finds the required lg_center")
-    print("  [2] Fix lg_center -> solver finds the required N_ac")
+    #   Mode 1: user sets N_main  -> solver finds the required lg_center
+    #   Mode 2: user sets lg_center -> solver finds the required N_main
+    _sec("7 · Main winding design mode")
+    print("  [1] Fix N_main      -> solver finds the required lg_center")
+    print("  [2] Fix lg_center -> solver finds the required N_main")
     design_mode = _ask("Choose design mode", 1, int, choices=[1, 2])
     print()
 
     # Core/material params bundled for _solve_Bac_full calls below.
-    # N_ac is NOT included here because it changes during the session.
+    # N_main is NOT included here because it changes during the session.
     _bac_core = (
         Ae_center,
         le_center,
@@ -533,29 +542,29 @@ def run_interactive():
     _bac_kf = dict(kf_center=kf_center, kf_outer=kf_outer)
 
     # Faraday ceiling used as rough estimate in both modes
-    N_ac_rough = int(np.ceil(L_nom * I_pk_A / (B_max_T * Ae_center)))
-    N_ac = N_ac_rough  # will be overwritten by whichever mode runs
+    N_main_rough = int(np.ceil(L_nom * I_main_pk_A / (B_main_max_T * Ae_center)))
+    N_main = N_main_rough  # will be overwritten by whichever mode runs
 
-    # -- 8. AC winding - turns  [MODE 1: N_ac fixed, lg_center to be found] ---
+    # -- 8. Main winding - turns  [MODE 1: N_main fixed, lg_center to be found] ---
     if design_mode == 1:
-        _sec("8 · AC winding - Number of turns  [mode 1: N -> lg]")
-        N_ac_calc = L_nom * I_pk_A / (B_max_T * Ae_center)
+        _sec("8 · Main winding - Number of turns  [mode 1: N -> lg]")
+        N_main_calc = L_nom * I_main_pk_A / (B_main_max_T * Ae_center)
         print(
-            f"  Calculated N_ac : {N_ac_calc:.4f}  "
-            f"(ceiling -> {int(np.ceil(N_ac_calc))})"
+            f"  Calculated N_main : {N_main_calc:.4f}  "
+            f"(ceiling -> {int(np.ceil(N_main_calc))})"
         )
-        N_ac = _ask("Choose N_ac (integer)", int(np.ceil(N_ac_calc)), int)
+        N_main = _ask("Choose N_main (integer)", int(np.ceil(N_main_calc)), int)
         print()
 
-    # -- 8. AC winding - gap  [MODE 2: lg_center fixed, N_ac to be found] ----
+    # -- 8. Main winding - gap  [MODE 2: lg_center fixed, N_main to be found] ----
     else:
-        _sec("8 · AC winding - Centre-leg gap  [mode 2: lg -> N]")
+        _sec("8 · Main winding - Centre-leg gap  [mode 2: lg -> N]")
 
         # Linear (no-saturation) estimate: lg ≈ N² · µ0 · Ae / L
-        lg_linear_mm = round(N_ac_rough**2 * MU_0 * Ae_center / L_nom * 1e3, 4)
+        lg_linear_mm = round(N_main_rough**2 * MU_0 * Ae_center / L_nom * 1e3, 4)
 
         print(f"  Linear estimate for lg_center : {lg_linear_mm} mm")
-        print(f"  (based on N_ac_rough = {N_ac_rough}, ignoring core reluctance)")
+        print(f"  (based on N_main_rough = {N_main_rough}, ignoring core reluctance)")
         lg_center_mm = _ask("Choose lg_center (mm)", lg_linear_mm, float)
         lg_center = lg_center_mm * 1e-3
         Rg_center = lg_center / (kf_center * MU_0 * Ae_center)
@@ -565,20 +574,26 @@ def run_interactive():
     if design_mode == 1:
         _sec("9 · Centre-leg air gap  [nonlinear solver]")
         print(
-            f"  Solving lg_center for L_nom = {L_nom_uH} uH  "
-            f"@ I_bias=0, I_ac=I_pk={I_pk_A} A ..."
+            f"  Solving lg_center for L_nom = {L_main_nom_uH} uH  "
+            f"@ I_bias=0, I_ac=I_pk={I_main_pk_A} A ..."
         )
 
         # At Ibias=0, Bdc=0 -> outer Req independent of N_bias (use dummy N_b=2)
         def _f_lgc(lgc):
-            _, Lac = _solve_Bac_full(0.0, I_pk_A, 2, lgc, N_ac, *_bac_core, **_bac_kf)
+            _, Lac = _solve_Bac_full(
+                0.0, I_main_pk_A, 2, lgc, N_main, *_bac_core, **_bac_kf
+            )
             if np.isnan(Lac):
                 raise ValueError(f"_solve_Bac_full returned nan at lgc={lgc}")
             return Lac - L_nom
 
         # Verify sign change before calling brentq
-        _L_lo = _solve_Bac_full(0.0, I_pk_A, 2, 1e-7, N_ac, *_bac_core, **_bac_kf)[1]
-        _L_hi = _solve_Bac_full(0.0, I_pk_A, 2, 20e-3, N_ac, *_bac_core, **_bac_kf)[1]
+        _L_lo = _solve_Bac_full(
+            0.0, I_main_pk_A, 2, 1e-7, N_main, *_bac_core, **_bac_kf
+        )[1]
+        _L_hi = _solve_Bac_full(
+            0.0, I_main_pk_A, 2, 20e-3, N_main, *_bac_core, **_bac_kf
+        )[1]
         _sign_ok = (
             not np.isnan(_L_lo)
             and not np.isnan(_L_hi)
@@ -589,19 +604,19 @@ def run_interactive():
             lg_center = brentq(_f_lgc, 1e-7, 20e-3, xtol=1e-10)
             lg_center_mm = round(lg_center * 1e3, 4)
             _, L_nom_chk = _solve_Bac_full(
-                0.0, I_pk_A, 2, lg_center, N_ac, *_bac_core, **_bac_kf
+                0.0, I_main_pk_A, 2, lg_center, N_main, *_bac_core, **_bac_kf
             )
             print(
-                f"  lg_center      : {lg_center_mm} mm (L_nom = {L_nom_chk*1e6:.2f} uH, target {L_nom_uH} uH)"
+                f"  lg_center      : {lg_center_mm} mm (L_nom = {L_nom_chk*1e6:.2f} uH, target {L_main_nom_uH} uH)"
             )
         else:
             print(
                 f"  Debug: L(lgc=0.001mm)={_L_lo*1e6:.1f}uH  L(lgc=20mm)={_L_hi*1e6:.1f}uH"
             )
-            print(f"  L_nom={L_nom*1e6:.1f}uH - check N_ac and core size.")
+            print(f"  L_nom={L_nom*1e6:.1f}uH - check N_main and core size.")
             lg_center_mm = _ask(
                 "Enter lg_center manually (mm)",
-                round(N_ac**2 * MU_0 * Ae_center / L_nom * 1e3, 4),
+                round(N_main**2 * MU_0 * Ae_center / L_nom * 1e3, 4),
                 float,
             )
             lg_center = lg_center_mm * 1e-3
@@ -612,25 +627,32 @@ def run_interactive():
 
         # Recompute L_nom with confirmed gap
         _, L_nom_final = _solve_Bac_full(
-            0.0, I_pk_A, 2, lg_center, N_ac, *_bac_core, **_bac_kf
+            0.0, I_main_pk_A, 2, lg_center, N_main, *_bac_core, **_bac_kf
         )
         print(f"  L_nom (confirmed gap) : {L_nom_final*1e6:.2f} uH")
         print()
 
-    # -- 9. N_ac from nonlinear model  [MODE 2] --------------------------------
+    # -- 9. N_main from nonlinear model  [MODE 2] --------------------------------
     else:
-        _sec("9 · AC winding turns  [nonlinear solver]")
+        _sec("9 · Main winding turns  [nonlinear solver]")
         print(
-            f"  Solving N_ac for L_nom = {L_nom_uH} uH  "
-            f"@ I_bias=0, I_ac=I_pk={I_pk_A} A, lg_center={lg_center_mm} mm ..."
+            f"  Solving N_main for L_nom = {L_main_nom_uH} uH  "
+            f"@ I_bias=0, I_ac=I_pk={I_main_pk_A} A, lg_center={lg_center_mm} mm ..."
         )
 
-        # _solve_Bac_full accepts N_ac_override so we can sweep N continuously
-        # without modifying the outer N_ac variable during root-finding.
+        # _solve_Bac_full accepts N_main_override so we can sweep N continuously
+        # without modifying the outer N_main variable during root-finding.
         def _f_Nac(N_cont):
             N = max(1, int(round(N_cont)))
             _, Lac = _solve_Bac_full(
-                0.0, I_pk_A, 2, lg_center, N_ac, *_bac_core, **_bac_kf, N_ac_override=N
+                0.0,
+                I_main_pk_A,
+                2,
+                lg_center,
+                N_main,
+                *_bac_core,
+                **_bac_kf,
+                N_main_override=N,
             )
             if np.isnan(Lac):
                 raise ValueError(f"solver returned nan at N={N}")
@@ -638,10 +660,24 @@ def run_interactive():
 
         # Verify sign change before calling brentq
         _L_lo = _solve_Bac_full(
-            0.0, I_pk_A, 2, lg_center, N_ac, *_bac_core, **_bac_kf, N_ac_override=1
+            0.0,
+            I_main_pk_A,
+            2,
+            lg_center,
+            N_main,
+            *_bac_core,
+            **_bac_kf,
+            N_main_override=1,
         )[1]
         _L_hi = _solve_Bac_full(
-            0.0, I_pk_A, 2, lg_center, N_ac, *_bac_core, **_bac_kf, N_ac_override=500
+            0.0,
+            I_main_pk_A,
+            2,
+            lg_center,
+            N_main,
+            *_bac_core,
+            **_bac_kf,
+            N_main_override=500,
         )[1]
         _sign_ok = (
             not np.isnan(_L_lo)
@@ -650,83 +686,94 @@ def run_interactive():
         )
 
         if _sign_ok:
-            N_ac_cont = brentq(_f_Nac, 1, 500, xtol=0.5)
-            N_ac_calc = int(np.ceil(N_ac_cont))
+            N_main_cont = brentq(_f_Nac, 1, 500, xtol=0.5)
+            N_main_calc = int(np.ceil(N_main_cont))
             _, L_nom_chk = _solve_Bac_full(
                 0.0,
-                I_pk_A,
+                I_main_pk_A,
                 2,
                 lg_center,
-                N_ac,
+                N_main,
                 *_bac_core,
                 **_bac_kf,
-                N_ac_override=N_ac_calc,
+                N_main_override=N_main_calc,
             )
-            print(f"  N_ac calculated : {N_ac_cont:.2f}  -> ceiling: {N_ac_calc}")
-            print(f"  L_nom check     : {L_nom_chk*1e6:.2f} uH  (target {L_nom_uH} uH)")
+            print(f"  N_main calculated : {N_main_cont:.2f}  -> ceiling: {N_main_calc}")
+            print(
+                f"  L_nom check     : {L_nom_chk*1e6:.2f} uH  (target {L_main_nom_uH} uH)"
+            )
         else:
             print(f"  Debug: L(N=1)={_L_lo*1e6:.1f} uH   L(N=500)={_L_hi*1e6:.1f} uH")
-            print("  Solver failed — enter N_ac manually.")
-            N_ac_calc = N_ac_rough  # keep rough estimate as default
+            print("  Solver failed — enter N_main manually.")
+            N_main_calc = N_main_rough  # keep rough estimate as default
 
-        N_ac = _ask("Choose N_ac (integer)", N_ac_calc, int)
+        N_main = _ask("Choose N_main (integer)", N_main_calc, int)
         print()
 
-        # Recompute L_nom with confirmed N_ac and fixed lg_center
+        # Recompute L_nom with confirmed N_main and fixed lg_center
         _, L_nom_final = _solve_Bac_full(
-            0.0, I_pk_A, 2, lg_center, N_ac, *_bac_core, **_bac_kf, N_ac_override=N_ac
+            0.0,
+            I_main_pk_A,
+            2,
+            lg_center,
+            N_main,
+            *_bac_core,
+            **_bac_kf,
+            N_main_override=N_main,
         )
-        print(f"  L_nom (confirmed N_ac) : {L_nom_final*1e6:.2f} uH")
+        print(f"  L_nom (confirmed N_main) : {L_nom_final*1e6:.2f} uH")
         print()
 
-    # -- 10. AC winding - Wire -------------------------------------------------
-    _sec("10 · AC winding - Wire selection")
-    S_req_ac = I_rms_A / J_max
-    S_skin_ac = np.pi * (7.5e-2) ** 2 / f_sw
+    # -- 10. Main winding - Wire -------------------------------------------------
+    _sec("10 · Main winding - Wire selection")
+    S_req_main = I_main_rms_A / J_max
+    S_skin_main = np.pi * (7.5e-2) ** 2 / f_sw
 
-    awg_req_row = find_awg_geq(S_req_ac, col=COL_S_CU)
-    awg_skin_row = find_awg_geq(S_skin_ac, col=COL_S_CU)
+    awg_req_main = find_awg_geq(S_req_main, col=COL_S_CU)
+    awg_skin_main = find_awg_geq(S_skin_main, col=COL_S_CU)
 
-    print(f"  S_req (ampacity) : {S_req_ac*1e6:.4f} mm2  ->  min AWG {awg_req_row[0]}")
     print(
-        f"  S_skin (at f_sw) : {S_skin_ac*1e6:.4f} mm2  ->  max AWG {awg_skin_row[0]}"
+        f"  S_req_main (ampacity) : {S_req_main*1e6:.4f} mm2  ->  min AWG {awg_req_main[0]}"
+    )
+    print(
+        f"  S_skin_main (at f_sw) : {S_skin_main*1e6:.4f} mm2  ->  max AWG {awg_skin_main[0]}"
     )
 
     # Default = thinnest wire between ampacity and skin constraints (highest AWG number)
     _awg_valid = {r[COL_AWG] for r in AWG_DATA}
-    AWG_ac = _ask(
+    AWG_main = _ask(
         "Choose AWG for ac winding",
-        max(awg_req_row[0], awg_skin_row[0]),
+        max(awg_req_main[0], awg_skin_main[0]),
         int,
         choices=_awg_valid,
         choices_hint="AWG 10..41",
     )
-    awg_final_row = find_awg_match(AWG_ac)
-    S_AWG_Cu = awg_final_row[COL_S_CU]
-    S_AWG_total = awg_final_row[COL_S_TOTAL]
-    N_cond_calc = int(np.ceil(S_req_ac / S_AWG_Cu))
-    print(f"  Parallel conductors needed : {N_cond_calc}")
-    N_cond = _ask("Choose number of parallel conductors", N_cond_calc, int)
+    awg_main_row = find_awg_match(AWG_main)
+    S_main_Cu = awg_main_row[COL_S_CU]
+    S_main_total = awg_main_row[COL_S_TOTAL]
+    N_cond_main_calc = int(np.ceil(S_req_main / S_main_Cu))
+    print(f"  Parallel conductors needed : {N_cond_main_calc}")
+    N_cond_main = _ask("Choose number of parallel conductors", N_cond_main_calc, int)
 
     print()
-    Aw_used_ac = N_ac * N_cond * S_AWG_total
-    kw_req_ac = Aw_used_ac / Aw
-    print(f"  Aw used      : {Aw_used_ac*1e6:.2f} mm2")
+    Aw_used_main = N_main * N_cond_main * S_main_total
+    kw_req_main = Aw_used_main / Aw
+    print(f"  Aw used      : {Aw_used_main*1e6:.2f} mm2")
     print(f"  Aw available : {Aw*1e6:.2f} mm2")
-    print(f"  k_w actual   : {kw_req_ac*100:.2f}%  (limit: {kw*100:.0f}%)")
-    if kw_req_ac > kw:
-        print("  Warning: AC winding does not fit. Proceeding anyway.")
+    print(f"  k_w actual   : {kw_req_main*100:.2f}%  (limit: {kw*100:.0f}%)")
+    if kw_req_main > kw:
+        print("  Warning: Main winding does not fit. Proceeding anyway.")
     print()
 
     # -- 11. Bias winding design -----------------------------------------------
     _sec("11 · Bias winding design (Both outer windings combined)")
     print(
-        f"  Target: L_ac = {L_min_uH} uH  @ I_bias_max = {I_bias_max_A} A, "
-        f"I_ac = I_pk = {I_pk_A} A"
+        f"  Target: L_main = {L_main_min_uH} uH  @ I_bias_max = {I_bias_max_A} A, "
+        f"I_ac = I_pk = {I_main_pk_A} A"
     )
 
     # Compute mu_r needed in outer branches for L_min:
-    # Req_total_min = N_ac^2 / L_min
+    # Req_total_min = N_main^2 / L_min
     # Req_outer_min = 2*(Req_total_min - Req_center)
     # From Req_outer = (Rc_h + Rc_outer + Rg_outer) with Rc's using mu_D(Bdc):
     # mu_r_needed = (le_h/Ae_h + (le_outer-lg_outer)/Ae_outer) /
@@ -735,13 +782,13 @@ def run_interactive():
     Rc_c0 = (le_center - lg_center) / (mu_c0 * Ae_center)
     Req_c = Rc_c0 + Rg_center
 
-    Req_total_min = N_ac**2 / L_min
+    Req_total_min = N_main**2 / L_min
     Req_outer_min = 2.0 * (Req_total_min - Req_c)
 
     # Check feasibility: Req_outer_min must be > Rg_outer
     if Req_outer_min <= Rg_outer:
         print(
-            f"  WARNING: L_min = {L_min_uH} uH requires Req_outer = "
+            f"  WARNING: L_min = {L_main_min_uH} uH requires Req_outer = "
             f"{Req_outer_min:.3e}, which is <= Rg_outer = {Rg_outer:.3e}."
         )
         print(f"  L_min too close to L_nom or lg_outer too large. Adjust inputs.")
@@ -755,7 +802,7 @@ def run_interactive():
     def _f_Nbias(N_cont):
         N = max(2, int(round(N_cont)))
         _, Lac = _solve_Bac_full(
-            I_bias_max_A, I_pk_A, N, lg_center, N_ac, *_bac_core, **_bac_kf
+            I_bias_max_A, I_main_pk_A, N, lg_center, N_main, *_bac_core, **_bac_kf
         )
         return Lac - L_min
 
@@ -765,7 +812,13 @@ def run_interactive():
         if N_bias_calc % 2 != 0:
             N_bias_calc += 1
         _, L_tgt_chk = _solve_Bac_full(
-            I_bias_max_A, I_pk_A, N_bias_calc, lg_center, N_ac, *_bac_core, **_bac_kf
+            I_bias_max_A,
+            I_main_pk_A,
+            N_bias_calc,
+            lg_center,
+            N_main,
+            *_bac_core,
+            **_bac_kf,
         )
         Bdc_chk = _solve_Bdc(
             I_bias_max_A,
@@ -781,7 +834,9 @@ def run_interactive():
         )
         print(f"  N_bias calculated  : {N_bias_cont:.2f}  -> suggested: {N_bias_calc}")
         print(f"  Bdc @ I_bias_max   : {Bdc_chk*1e3:.2f} mT")
-        print(f"  L_min check        : {L_tgt_chk*1e6:.2f} uH  (target {L_min_uH} uH)")
+        print(
+            f"  L_min check        : {L_tgt_chk*1e6:.2f} uH  (target {L_main_min_uH} uH)"
+        )
     except ValueError:
         N_bias_calc = 60
         print(f"  Warning: N_bias solver failed - Enter manually.")
@@ -793,12 +848,14 @@ def run_interactive():
 
     # Verify chosen N_bias
     _, L_bias_final = _solve_Bac_full(
-        I_bias_max_A, I_pk_A, N_bias, lg_center, N_ac, *_bac_core, **_bac_kf
+        I_bias_max_A, I_main_pk_A, N_bias, lg_center, N_main, *_bac_core, **_bac_kf
     )
     Bdc_final = _solve_Bdc(
         I_bias_max_A, N_bias, Ae_outer, le_outer, le_h, Ae_h, lg_outer, k1, k2, k3
     )
-    print(f"  L_ac @ I_bias_max  : {L_bias_final*1e6:.2f} uH  (target {L_min_uH} uH)")
+    print(
+        f"  L_main @ I_bias_max  : {L_bias_final*1e6:.2f} uH  (target {L_main_min_uH} uH)"
+    )
     print(f"  Bdc @ I_bias_max   : {Bdc_final*1e3:.2f} mT")
     print()
 
@@ -828,6 +885,7 @@ def run_interactive():
     Aw_used_bias = (N_bias / 2) * N_cond_bias * S_bias_total
     kw_req_bias = Aw_used_bias / Aw
 
+    print()
     print(f"  Aw used      : {Aw_used_bias*1e6:.2f} mm2")
     print(f"  Aw available : {Aw*1e6:.2f} mm2")
     print(f"  k_w actual   : {kw_req_bias*100:.2f}%  (limit: {kw*100:.0f}%)")
@@ -849,18 +907,18 @@ def run_interactive():
     Req_outer = Rc_h_nl + Rc_o_nl + Rg_outer
     Req_total = Req_outer / 2.0 + Req_c
 
-    F_ac = N_ac * I_pk_A
-    Phi_ac = F_ac / Req_total
-    B_center = Phi_ac / Ae_center
-    L_ac = N_ac**2 / Req_total
+    F_main = N_main * I_main_pk_A
+    Phi_main = F_main / Req_total
+    B_center = Phi_main / Ae_center
+    L_main = N_main**2 / Req_total
 
     F_bias = N_bias * I_bias_max_A
     Phi_bias = F_bias / (2.0 * Req_outer)
     B_outer = Phi_bias / Ae_outer
 
-    # AC winding resistance
-    wire_len_ac = N_ac * N_cond * lt_center
-    wire_R_ac = R_CU * N_ac * lt_center / (S_AWG_Cu * N_cond)
+    # Main winding resistance
+    wire_len_main = N_main * N_cond_main * lt_center
+    wire_R_main = R_CU * N_main * lt_center / (S_main_Cu * N_cond_main)
 
     # DC winding resistance
     wire_len_bias = N_bias * N_cond_bias * lt_outer
@@ -882,17 +940,17 @@ def run_interactive():
     print(f"  Req_outer           : {Req_outer:.4e}  A.t/Wb")
     print(f"  Req_center          : {Req_c:.4e}  A.t/Wb")
     print(f"  Req_total           : {Req_total:.4e}  A.t/Wb")
-    print(f"  F_ac                : {F_ac:.1f}  A.t")
-    print(f"  Phi_ac              : {Phi_ac*1e6:.4f} uWb")
+    print(f"  F_main                : {F_main:.1f}  A.t")
+    print(f"  Phi_main              : {Phi_main*1e6:.4f} uWb")
     print(f"  B_center (pk)       : {B_center*1e3:.2f} mT")
-    print(f"  L_ac (Req)          : {L_ac*1e6:.2f} uH")
-    print(f"  L_ac (nonlinear)    : {L_bias_final*1e6:.2f} uH  @ I_bias_max")
+    print(f"  L_main (Req)          : {L_main*1e6:.2f} uH")
+    print(f"  L_main (nonlinear)    : {L_bias_final*1e6:.2f} uH  @ I_bias_max")
     print(f"  B_outer (bias, max) : {B_outer*1e3:.2f} mT")
 
     print()
     _sec("Winding resistance")
-    print(f"  AC winding wire length   : {wire_len_ac:.4f} m")
-    print(f"  AC windinf resistance    : {wire_R_ac*1e3:.4f} mOhm")
+    print(f"  Main winding wire length   : {wire_len_main:.4f} m")
+    print(f"  Main winding resistance    : {wire_R_main*1e3:.4f} mOhm")
     print(f"  Bias winding wire length : {wire_len_bias:.4f} m")
     print(f"  Bias winding resistance  : {wire_R_bias*1e3:.4f} mOhm")
     print()
@@ -900,22 +958,22 @@ def run_interactive():
     _hdr("DESIGN SUMMARY")
     # Show which design mode was used so the summary is self-contained
     mode_label = (
-        "[1] N_ac fixed  ->  lg_center solved"
+        "[1] N_main fixed  ->  lg_center solved"
         if design_mode == 1
-        else "[2] lg_center fixed  ->  N_ac solved"
+        else "[2] lg_center fixed  ->  N_main solved"
     )
     print(f"  {'Design mode':<28}: {mode_label}")
     rows = [
         ("Core", core_name),
-        ("N_ac", f"{N_ac} turns"),
-        ("N_cond_ac", f"{N_cond} x AWG {AWG_ac}"),
+        ("N_main", f"{N_main} turns"),
+        ("N_cond_main", f"{N_cond_main} x AWG {AWG_main}"),
         ("N_bias", f"{N_bias} turns"),
         ("N_cond_bias", f"{N_cond_bias} x AWG {AWG_bias}"),
         ("lg_center", f"{lg_center_mm} mm"),
         ("lg_outer", f"{lg_outer_mm} mm"),
         ("L_nom  (@ I_bias=0)", f"{L_nom_final*1e6:.2f} uH"),
-        ("L_ac   (@ I_bias_max)", f"{L_bias_final*1e6:.2f} uH"),
-        ("k_w ac", f"{kw_req_ac*100:.2f}%"),
+        ("L_main   (@ I_bias_max)", f"{L_bias_final*1e6:.2f} uH"),
+        ("k_w main", f"{kw_req_main*100:.2f}%"),
         ("k_w bias", f"{kw_req_bias*100:.2f}%"),
     ]
     for k, v in rows:
@@ -927,8 +985,8 @@ def run_interactive():
         # design mode (1 = N fixed -> lg solved; 2 = lg fixed -> N solved)
         design_mode=design_mode,
         # targets
-        L_nom_uH=L_nom_uH,
-        L_min_uH=L_min_uH,
+        L_main_nom_uH=L_main_nom_uH,
+        L_main_min_uH=L_main_min_uH,
         L_nom_achieved_uH=L_nom_final * 1e6,
         L_ac_at_bias_uH=L_bias_final * 1e6,
         # material
@@ -937,9 +995,9 @@ def run_interactive():
         desc_mat=desc_mat,
         # inputs
         f_sw_kHz=f_sw_kHz,
-        I_rms_A=I_rms_A,
-        I_pk_A=I_pk_A,
-        B_max_T=B_max_T,
+        I_main_rms_A=I_main_rms_A,
+        I_main_pk_A=I_main_pk_A,
+        B_main_max_T=B_main_max_T,
         I_bias_max_A=I_bias_max_A,
         kw=kw,
         J_max_Acm2=J_max_Acm2,
@@ -965,14 +1023,14 @@ def run_interactive():
         AeAw_rec_mm4=AeAw_rec * 1e12,
         AeAw_avail_mm4=AeAw_chosen * 1e12,
         # ac winding
-        N_ac=N_ac,
-        N_ac_calc=N_ac_calc if design_mode == 1 else float(N_ac),
-        AWG=AWG_ac,
-        N_cond=N_cond,
-        S_AWG_Cu_mm2=S_AWG_Cu * 1e6,
-        S_AWG_total_mm2=S_AWG_total * 1e6,
+        N_main=N_main,
+        N_main_calc=N_main_calc if design_mode == 1 else float(N_main),
+        AWG_main=AWG_main,
+        N_cond_main=N_cond_main,
+        S_main_Cu_mm2=S_main_Cu * 1e6,
+        S_main_total_mm2=S_main_total * 1e6,
         kw_max=kw,
-        kw_req=kw_req_ac,
+        kw_req_main=kw_req_main,
         # gaps
         lg_center_mm=lg_center_mm,
         lg_center_calc_mm=lg_center_mm,
@@ -1003,15 +1061,15 @@ def run_interactive():
         Req_outer=Req_outer,
         Req_total=Req_total,
         # operating point
-        F_ac=F_ac,
-        Phi_ac_uWb=Phi_ac * 1e6,
+        F_main=F_main,
+        Phi_main_uWb=Phi_main * 1e6,
         B_center_mT=B_center * 1e3,
-        L_ac_uH=L_ac * 1e6,
+        L_main_uH=L_main * 1e6,
         Bdc_max_mT=Bdc_final * 1e3,
         B_outer_mT=B_outer * 1e3,
         # resistance
-        wire_len_m=wire_len_ac,
-        R_winding_mOhm=wire_R_ac * 1e3,
+        wire_len_main_m=wire_len_main,
+        R_main_winding_mOhm=wire_R_main * 1e3,
         wire_len_bias_m=wire_len_bias,
         wire_len_bias_per_leg_m=wire_len_bias / 2,
         R_bias_winding_mOhm=wire_R_bias * 1e3,
@@ -1178,7 +1236,7 @@ def generate_report(
         ]
 
     d = design
-    cw4 = [Wb * 0.40, Wb * 0.22, Wb * 0.20, Wb * 0.18]
+    cw4 = [Wb * 0.48, Wb * 0.22, Wb * 0.20, Wb * 0.10]
 
     story = []
 
@@ -1203,45 +1261,43 @@ def generate_report(
     # -- Electrical specs ------------------------------------------------------
     story.append(P("Electrical Specifications", "h2"))
 
-    # Resolve the design-mode label for the report
-    mode_label_pdf = (
-        "Mode 1: N_ac fixed -> lg_center solved"
-        if d.get("design_mode", 1) == 1
-        else "Mode 2: lg_center fixed -> N_ac solved"
-    )
-
     data = rows_to_para(
         [
             ["Parameter", "Symbol", "Value", "Unit"],
             [
-                "Nominal inductance (target, I_bias=0)",
-                "L_nom",
-                f"{d['L_nom_uH']:.1f}",
+                "Main winding nominal inductance (I_bias=0)",
+                "L_main_nom",
+                f"{d['L_main_nom_uH']:.1f}",
                 "uH",
             ],
             [
-                "Minimum inductance (target, I_bias=max)",
-                "L_min",
-                f"{d['L_min_uH']:.1f}",
+                "Main winding minimum inductance (I_bias_max)",
+                "L_main_min",
+                f"{d['L_main_min_uH']:.1f}",
                 "uH",
             ],
             [
-                "Nominal inductance (achieved)",
-                "L_nom*",
+                "Main winding nominal inductance (achieved)",
+                "L_main_nom*",
                 f"{d['L_nom_achieved_uH']:.2f}",
                 "uH",
             ],
             [
-                "Min inductance (achieved)",
-                "L_min*",
+                "Main winding minimum inductance (achieved)",
+                "L_main_min*",
                 f"{d['L_ac_at_bias_uH']:.2f}",
                 "uH",
             ],
-            ["Switching frequency", "f_sw", f"{d['f_sw_kHz']}", "kHz"],
-            ["RMS current", "I_rms", f"{d['I_rms_A']}", "A"],
-            ["Peak current", "I_pk", f"{d['I_pk_A']}", "A"],
-            ["Max flux density", "B_max", f"{d['B_max_T']}", "T"],
-            ["Max DC bias current", "I_bias_max", f"{d['I_bias_max_A']}", "A"],
+            ["Main winding frequency", "f_sw", f"{d['f_sw_kHz']}", "kHz"],
+            ["Main winding RMS current", "I_main_rms", f"{d['I_main_rms_A']}", "A"],
+            ["Main winding peak current", "I_main_pk", f"{d['I_main_pk_A']}", "A"],
+            [
+                "Main winding max flux density",
+                "B_main_max",
+                f"{d['B_main_max_T']}",
+                "T",
+            ],
+            ["Bias winding max DC current", "I_bias_max", f"{d['I_bias_max_A']}", "A"],
         ]
     )
     story.append(_styled_table(data, cw4))
@@ -1376,7 +1432,7 @@ def generate_report(
             "The centre-leg gap (lg_center) is <i>subtractive</i>. It corresponds to "
             "material physically removed from the centre leg, reducing its effective "
             "magnetic path length. The values shown in the figure are nominal values, "
-            "calculated based on the core geometry. For the reluctance and inductance calculations,"
+            "calculated based on the core geometry. For the reluctance and inductance calculations, "
             "lg_center whill be deducted from le_center ",
             "note",
         )
@@ -1384,19 +1440,24 @@ def generate_report(
 
     story.append(PageBreak())
 
-    # -- Ac winding ------------------------------------------------------------
-    story.append(P("Ac Winding (Centre Leg)", "h2"))
+    # -- Main winding ----------------------------------------------------------
+    story.append(P("Main Winding (Centre Leg)", "h2"))
     data = rows_to_para(
         [
             ["Parameter", "Symbol", "Value", "Unit"],
-            ["Calculated turns", "N_calc", f"{d['N_ac_calc']:.4f}", "-"],
-            ["Chosen turns", "N_ac", f"{d['N_ac']}", "-"],
-            ["AWG", "AWG", f"{d['AWG']}", "-"],
-            ["Parallel conductors", "N_cond", f"{d['N_cond']}", "-"],
-            ["Window fill factor required", "kw_req", f"{d['kw_req']*100:.2f}", "%"],
+            ["Calculated turns", "N_main_calc", f"{d['N_main_calc']:.4f}", "-"],
+            ["Chosen turns", "N_main", f"{d['N_main']}", "-"],
+            ["AWG", "AWG_main", f"{d['AWG_main']}", "-"],
+            ["Parallel conductors", "N_cond_main", f"{d['N_cond_main']}", "-"],
+            [
+                "Window fill factor required",
+                "kw_req_main",
+                f"{d['kw_req_main']*100:.2f}",
+                "%",
+            ],
             ["Mean turn length", "lt_center", f"{d['lt_center_mm']:.2f}", "mm"],
-            ["Total wire length", "l_wire", f"{d['wire_len_m']:.4f}", "m"],
-            ["Winding resistance", "R_CU", f"{d['R_winding_mOhm']:.4f}", "mOhm"],
+            ["Total wire length", "l_main", f"{d['wire_len_main_m']:.4f}", "m"],
+            ["Winding resistance", "R_main", f"{d['R_main_winding_mOhm']:.4f}", "mOhm"],
         ]
     )
     story.append(_styled_table(data, cw4))
@@ -1417,10 +1478,25 @@ def generate_report(
                 "%",
             ],
             ["Mean turn length (outer)", "lt_outer", f"{d['lt_outer_mm']:.2f}", "mm"],
-            ["Wire length (per leg)", "l_bias/leg", f"{d['wire_len_bias_per_leg_m']:.4f}", "m"],
+            [
+                "Wire length (per leg)",
+                "l_bias/leg",
+                f"{d['wire_len_bias_per_leg_m']:.4f}",
+                "m",
+            ],
             ["Wire length (total)", "l_bias", f"{d['wire_len_bias_m']:.4f}", "m"],
-            ["Winding resistance (per leg)", "R_bias/leg", f"{d['R_bias_per_leg_mOhm']:.4f}", "mOhm"],
-            ["Winding resistance (total)", "R_bias", f"{d['R_bias_winding_mOhm']:.4f}", "mOhm"],
+            [
+                "Winding resistance (per leg)",
+                "R_bias/leg",
+                f"{d['R_bias_per_leg_mOhm']:.4f}",
+                "mOhm",
+            ],
+            [
+                "Winding resistance (total)",
+                "R_bias",
+                f"{d['R_bias_winding_mOhm']:.4f}",
+                "mOhm",
+            ],
             ["mu_r needed @ I_bias_max", "mu_r_req", f"{d['mu_r_needed']:.1f}", "-"],
         ]
     )
@@ -1452,22 +1528,22 @@ def generate_report(
 
         import math
 
-        d_ac_mm = math.sqrt(4 * d["S_AWG_total_mm2"] * 1e-6 / math.pi) * 1e3
+        d_ac_mm = math.sqrt(4 * d["S_main_total_mm2"] * 1e-6 / math.pi) * 1e3
         d_bias_mm = math.sqrt(4 * d["S_bias_total_mm2"] * 1e-6 / math.pi) * 1e3
 
         max_cols_ac = int(CF_W_mm / d_ac_mm)
         max_cols_bias = int(CF_W_mm / d_bias_mm)
 
-        total_ac = d["N_ac"] * d["N_cond"]
+        total_ac = d["N_main"] * d["N_cond_main"]
         total_bias = (d["N_bias"] // 2) * d["N_cond_bias"]
 
         layers_ac = ceil(total_ac / max(int(CF_L_mm / d_ac_mm), 1))
         layers_bias = ceil(total_bias / max(int(CF_L_mm / d_bias_mm), 1))
 
         label_ac = (
-            f"<b>AC winding</b> - {d['N_ac']}T ({d['N_cond']} x AWG{d['AWG']})<br/>"
+            f"<b>Main winding</b> - {d['N_main']}T ({d['N_cond_main']} x AWG{d['AWG_main']})<br/>"
             f"{layers_ac} layer{'s' if layers_ac > 1 else ''}  -  "
-            f"k<sub>w</sub> = {d['kw_req']*100:.1f}%"
+            f"k<sub>w</sub> = {d['kw_req_main']*100:.1f}%"
         )
         label_bias = (
             f"<b>Bias winding</b> (per leg) - {d['N_bias']//2}T ({d['N_cond_bias']} x AWG{d['AWG_bias']})<br/>"
@@ -1519,11 +1595,11 @@ def generate_report(
             spaceBefore=4,
         )
         kw_max = d.get("kw_max", 1.0)
-        if d["kw_req"] > kw_max:
+        if d["kw_req_main"] > kw_max:
             story.append(
                 Paragraph(
-                    f"WARNING: AC winding does not fit — k<sub>w</sub> required "
-                    f"({d['kw_req']*100:.1f}%) exceeds maximum ({kw_max*100:.0f}%). "
+                    f"WARNING: Main winding does not fit — k<sub>w</sub> required "
+                    f"({d['kw_req_main']*100:.1f}%) exceeds maximum ({kw_max*100:.0f}%). "
                     "Conductors shown in red fall outside the coil former window.",
                     S_warn,
                 )
@@ -1545,13 +1621,43 @@ def generate_report(
     data = rows_to_para(
         [
             ["Parameter", "Symbol", "Value", "Unit"],
-            ["Inductance @ I_bias=0", "L_nom", f"{d['L_nom_achieved_uH']:.2f}", "uH"],
-            ["Inductance @ I_bias_max", "L_min", f"{d['L_ac_at_bias_uH']:.2f}", "uH"],
-            ["MMF ac winding (@ I_pk)", "F_ac", f"{d['F_ac']:.1f}", "A·t"],
-            ["Flux centre leg (@ I_pk)", "Phi_ac", f"{d['Phi_ac_uWb']:.4f}", "uWb"],
-            ["Flux density centre", "B_center", f"{d['B_center_mT']:.2f}", "mT"],
-            ["Flux density outer", "B_outer", f"{d['B_outer_mT']:.2f}", "mT"],
-            ["DC flux density outer (max)", "Bdc_max", f"{d['Bdc_max_mT']:.2f}", "mT"],
+            [
+                "Main winding inductance (I_bias=0)",
+                "L_main_nom",
+                f"{d['L_nom_achieved_uH']:.2f}",
+                "uH",
+            ],
+            [
+                "Main winding inductance (I_bias_max)",
+                "L_main_min",
+                f"{d['L_ac_at_bias_uH']:.2f}",
+                "uH",
+            ],
+            ["MMF main winding (I_main_pk)", "F_main", f"{d['F_main']:.1f}", "A·t"],
+            [
+                "Flux centre leg (I_main_pk)",
+                "Phi_main",
+                f"{d['Phi_main_uWb']:.4f}",
+                "uWb",
+            ],
+            [
+                "Flux density, centre leg (I_main_pk, I_bias_max)",
+                "B_center",
+                f"{d['B_center_mT']:.2f}",
+                "mT",
+            ],
+            [
+                "Flux density, outer leg (I_bias_max, linear)",
+                "B_outer",
+                f"{d['B_outer_mT']:.2f}",
+                "mT",
+            ],
+            [
+                "DC flux density, outer leg (I_bias_max, nonlinear)",
+                "Bdc_max",
+                f"{d['Bdc_max_mT']:.2f}",
+                "mT",
+            ],
         ]
     )
     story.append(_styled_table(data, cw4))
@@ -1622,7 +1728,7 @@ def generate_report(
         img_w = Wb * 0.8
         story.append(Image(dc_plot_path, width=img_w, height=img_w * (4.5 / 8)))
 
-    # AC analysis
+    # Main winding analysis
     story.append(
         P(
             "AC inductance and flux density in the centre leg vs bias current, "
@@ -1818,7 +1924,7 @@ def _mu_D(B, k1, k2, k3):
 def _solve_Bac(
     Ibias,
     Iac,
-    N_ac,
+    N_main,
     N_bias,
     Ae_c,
     Ae_o,
@@ -1837,7 +1943,7 @@ def _solve_Bac(
     """
     Solve implicitly for B_ac in the centre leg:
 
-        N_ac * Iac = B_ac * Ae_c * Req_total_ac(B_ac, Ibias)
+        N_main * Iac = B_ac * Ae_c * Req_total_ac(B_ac, Ibias)
 
     where:
         Req_total_ac = Rc_center(mu_D(Bac)) + Rg_center
@@ -1862,7 +1968,7 @@ def _solve_Bac(
     def f(Bac):
         mu_c = _mu_D(Bac, k1, k2, k3)
         Rc_c = (le_c - lg_c) / (mu_c * Ae_c)
-        return Bac * Ae_c * (Rc_c + Rg_c + Req_outer_parallel) - N_ac * Iac
+        return Bac * Ae_c * (Rc_c + Rg_c + Req_outer_parallel) - N_main * Iac
 
     try:
         return brentq(f, 1e-12, 5.0, xtol=1e-10, maxiter=300)
@@ -1875,7 +1981,7 @@ def _solve_Bac_full(
     Iac,
     N_b,
     lg_c,
-    N_ac,
+    N_main,
     Ae_center,
     le_center,
     Ae_outer,
@@ -1888,7 +1994,7 @@ def _solve_Bac_full(
     k3,
     kf_center=1.0,
     kf_outer=1.0,
-    N_ac_override=None,
+    N_main_override=None,
 ):
     """
     Solve implicitly for B_ac in the centre leg; return (Bac, Lac).
@@ -1897,10 +2003,10 @@ def _solve_Bac_full(
     Bias current Ibias saturates the outer core via _solve_Bdc; the resulting
     mu_D sets the outer branch reluctance Req_op.
 
-    N_ac_override: when given, overrides N_ac (used in mode-2 root-finding
-    before N_ac is finalised).
+    N_main_override: when given, overrides N_main (used in mode-2 root-finding
+    before N_main is finalised).
     """
-    _N_ac = N_ac_override if N_ac_override is not None else N_ac
+    _N_main = N_main_override if N_main_override is not None else N_main
 
     Rg_c = lg_c / (kf_center * MU_0 * Ae_center)
     Rg_outer = lg_outer / (kf_outer * MU_0 * Ae_outer)
@@ -1915,21 +2021,21 @@ def _solve_Bac_full(
     def f(Bac):
         mu_c = _mu_D(Bac, k1, k2, k3)
         Rc_c = (le_center - lg_c) / (mu_c * Ae_center)
-        return Bac * Ae_center * (Rc_c + Rg_c + Req_op) - _N_ac * Iac
+        return Bac * Ae_center * (Rc_c + Rg_c + Req_op) - _N_main * Iac
 
     try:
         Bac: float = brentq(f, 1e-12, 5.0, xtol=1e-10, maxiter=300)  # type: ignore[assignment]
     except ValueError:
         return float("nan"), float("nan")
-    return Bac, _N_ac * Bac * Ae_center / Iac
+    return Bac, _N_main * Bac * Ae_center / Iac
 
 
 def compute_ac_analysis(design, Iac_fractions=None, n_points=300):
     """
     Compute Lac and Bac vs I_bias for several AC current amplitudes.
 
-    Lac(Ibias, Iac) = N_ac^2 / Req_total_ac(Bac, Bdc)
-                    = N_ac * Bac * Ae_c / Iac
+    Lac(Ibias, Iac) = N_main^2 / Req_total_ac(Bac, Bdc)
+                    = N_main * Bac * Ae_c / Iac
 
     Using mu_D(Bac) for the centre leg - Req depends on Iac, so Lac has
     one curve per Iac value.
@@ -1947,7 +2053,7 @@ def compute_ac_analysis(design, Iac_fractions=None, n_points=300):
     Bac_matrix  : shape (len(Iac_fractions), n_points) - T
     Iac_list    : AC current values used (A)
     """
-    N_ac = design["N_ac"]
+    N_main = design["N_main"]
     N_bias = design["N_bias"]
     Ae_c = design["Ae_center_m2"]
     Ae_o = design["Ae_outer_m2"]
@@ -1958,7 +2064,7 @@ def compute_ac_analysis(design, Iac_fractions=None, n_points=300):
     lg_c = design["lg_center_mm"] * 1e-3
     lg_o = design["lg_outer_m"]
     k1, k2, k3 = design["k1"], design["k2"], design["k3"]
-    I_pk = design["I_pk_A"]
+    I_pk = design["I_main_pk_A"]
     I_max = design["I_bias_max_A"]
     kf_center = design["kf_center"]
     kf_outer = design["kf_outer"]
@@ -1976,7 +2082,7 @@ def compute_ac_analysis(design, Iac_fractions=None, n_points=300):
             Bac = _solve_Bac(
                 Ib,
                 Iac,
-                N_ac,
+                N_main,
                 N_bias,
                 Ae_c,
                 Ae_o,
@@ -1994,7 +2100,7 @@ def compute_ac_analysis(design, Iac_fractions=None, n_points=300):
             )
             if not np.isnan(Bac):
                 Bac_matrix[j, i] = Bac
-                Lac_matrix[j, i] = N_ac * Bac * Ae_c / Iac
+                Lac_matrix[j, i] = N_main * Bac * Ae_c / Iac
 
     return I_bias_arr, Lac_matrix, Bac_matrix, Iac_list
 
@@ -2009,7 +2115,7 @@ def plot_ac_analysis(design, save_path, Iac_fractions=None, n_points=300):
         design, Iac_fractions=Iac_fractions, n_points=n_points
     )
 
-    I_pk = design["I_pk_A"]
+    I_pk = design["I_main_pk_A"]
     cmap = plt.get_cmap("tab10")
 
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 7), sharex=True)
@@ -2028,21 +2134,21 @@ def plot_ac_analysis(design, save_path, Iac_fractions=None, n_points=300):
             I_bias_arr, Bac_matrix[j] * 1e3, color=color, linewidth=2.0, label=label
         )
 
-    ax1.set_ylabel("$L_{AC}$ (μH)", fontsize=11)
+    ax1.set_ylabel("$L_{Main}$ (μH)", fontsize=11)
     ax1.set_xlim(0, design["I_bias_max_A"])
     ax1.set_ylim(bottom=0)
     ax1.yaxis.set_major_formatter(ticker.FormatStrFormatter("%.0f"))
     ax1.legend(fontsize=9, loc="upper right")
     ax1.grid(True, linestyle="--", alpha=0.35)
     ax1.set_title(
-        f"AC analysis - {design['core']}  "
-        f"(N_ac={design['N_ac']}, N_bias={design['N_bias']}, "
+        f"Main winding analysis - {design['core']}  "
+        f"(N_main={design['N_main']}, N_bias={design['N_bias']}, "
         f"lg_c={design['lg_center_mm']} mm, lg_o={design['lg_outer_mm']} mm)",
         fontsize=9,
     )
 
     ax2.set_xlabel("Bias current $I_{bias}$ (A)", fontsize=11)
-    ax2.set_ylabel("$B_{AC,center}$ (mT)", fontsize=11)
+    ax2.set_ylabel("$B_{Main,center}$ (mT)", fontsize=11)
     ax2.set_ylim(bottom=0)
     ax2.yaxis.set_major_formatter(ticker.FormatStrFormatter("%.0f"))
     ax2.legend(fontsize=9, loc="upper right")
@@ -2067,7 +2173,7 @@ def plot_ac_analysis(design, save_path, Iac_fractions=None, n_points=300):
     fig.tight_layout()
     fig.savefig(save_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
-    print(f"  AC analysis plot saved -> {save_path}")
+    print(f"  Main winding analysis plot saved -> {save_path}")
     return fig
 
 
@@ -2077,7 +2183,7 @@ def plot_ac_analysis(design, save_path, Iac_fractions=None, n_points=300):
 
 
 def draw_winding_window(
-    CF_W_mm, CF_L_mm, S_total_m2, N_turns, N_cond, thickness, spacing, title=""
+    CF_W_mm, CF_L_mm, S_total_m2, N_turns, N_cond_main, thickness, spacing, title=""
 ):
     """
     Draw a cross-section of the coil former window with conductors packed in rows.
@@ -2086,7 +2192,7 @@ def draw_winding_window(
 
     # Capacity within the window
     max_rows = int(CF_L_mm / d)
-    total_needed = N_turns * N_cond
+    total_needed = N_turns * N_cond_main
 
     # Columns actually required to place all conductors (may exceed max_cols)
     rows_per_col = max(max_rows, 1)
@@ -2226,10 +2332,10 @@ if __name__ == "__main__":
     dc_plot_path = os.path.join(out_dir, "Ldc_vs_Ibias.png")
     plot_dc_analysis(design, dc_plot_path, n_points=300)
 
-    # -- AC analysis -----------------------------------------------------------
-    _sec("AC analysis  (Lac and Bac vs Ibias)")
+    # -- Main winding analysis -----------------------------------------------------------
+    _sec("Main winding analysis  (Lac and Bac vs Ibias)")
     Iac_fractions = [0.25, 0.50, 1.00]  # fractions of I_pk for Bac curves
-    I_pk = design["I_pk_A"]
+    I_pk = design["I_main_pk_A"]
     print(f"  Bac curves: {[round(I_pk*f,3) for f in Iac_fractions]} A")
     ac_plot_path = os.path.join(out_dir, "Lac_vs_Ibias.png")
     plot_ac_analysis(design, ac_plot_path, Iac_fractions=Iac_fractions, n_points=300)
@@ -2239,14 +2345,14 @@ if __name__ == "__main__":
     fig_ww = draw_winding_window(
         design["CF_W_mm"],
         design["CF_L_mm"],
-        float(design["S_AWG_total_mm2"]) * 1e-6,
-        design["N_ac"],
-        design["N_cond"],
+        float(design["S_main_total_mm2"]) * 1e-6,
+        design["N_main"],
+        design["N_cond_main"],
         design["thickness_mm"],
         design["spacing_mm"],
-        title=f"AC winding  -  {design['N_ac']}Tx{design['N_cond']}xAWG{design['AWG']}",
+        title=f"Main winding  -  {design['N_main']}Tx{design['N_cond_main']}xAWG{design['AWG_main']}",
     )
-    ww_ac_path = os.path.join(out_dir, "winding_window_ac.png")
+    ww_ac_path = os.path.join(out_dir, "winding_window_main.png")
     fig_ww.savefig(ww_ac_path, dpi=300, bbox_inches="tight")
     plt.close(fig_ww)
     print(f"  Saved -> {ww_ac_path}")
