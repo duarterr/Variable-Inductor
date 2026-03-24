@@ -61,7 +61,7 @@ function plotDcAnalysis(design, divId, nPoints = 300) {
   const layout = {
     title: {
       text: `DC bias analysis — ${design.core}<br>` +
-        `<span style="font-size:11px">N_bias=${design.N_bias}, ` +
+        `<span style="font-size:11px">N_bias=${design.N_bias} (per leg), ` +
         `lg_outer=${design.lg_outer_mm} mm</span>`,
       font: { size: 13 },
     },
@@ -145,7 +145,7 @@ function plotAcAnalysis(design, divId, IacFractions = [0.25, 0.5, 1.0], nPoints 
   const layout = {
     title: {
       text: `Main winding analysis — ${design.core}<br>` +
-        `<span style="font-size:10px">N_main=${design.N_main}, N_bias=${design.N_bias}, ` +
+        `<span style="font-size:10px">N_main=${design.N_main}, N_bias=${design.N_bias} (per leg), ` +
         `lg_center=${design.lg_center_mm.toFixed(3)} mm, lg_outer=${design.lg_outer_mm} mm</span>`,
       font: { size: 13 },
     },

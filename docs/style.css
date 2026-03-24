@@ -343,7 +343,7 @@ body {
 #summary-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: 13px;
   margin-bottom: 16px;
 }
 
@@ -372,7 +372,7 @@ body {
 
 #summary-table tbody td.val {
   font-family: "Consolas", monospace;
-  font-size: 11px;
+  font-size: 13px;
 }
 
 #summary-table tbody td.ok {
@@ -407,11 +407,17 @@ body {
   border: 1px solid var(--grey-border);
   border-radius: var(--radius);
   overflow: hidden;
+  padding-bottom: 10px;
+}
+
+.ww-card .panel-header {
+  border-radius: var(--radius) var(--radius) 0 0;
 }
 
 .ww-card canvas {
   display: block;
   max-width: 100%;
+  margin: 8px auto 0;
 }
 
 /* ── Core geometry SVG ────────────────────────────────────── */

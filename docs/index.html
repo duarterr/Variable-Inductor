@@ -308,8 +308,8 @@
               <div class="form-row single">
                 <div class="form-group">
                   <label for="N_bias_override"
-                    data-tip="Turns per bias coil (per outer leg). Total N_bias = 2 x this value. Leave empty to let the solver find the turns needed to achieve L_min at I_bias_max.">N<sub>bias</sub>
-                    <span class="unit">(turns - per coil)</span></label>
+                    data-tip="Turns per outer bobbin. Leave empty to let the solver find the minimum turns to achieve L_min at I_bias_max.">N<sub>bias</sub>
+                    <span class="unit">(turns per outer bobbin)</span></label>
                   <input type="number" id="N_bias_override" value="" min="1" step="1" placeholder="auto" />
                 </div>
               </div>
@@ -344,7 +344,7 @@
               <div class="form-row">
                 <div class="form-group">
                   <label for="AWG_bias"
-                    data-tip="Wire gauge for the bias winding. Auto selects based on I_bias_max and skin effect. DC winding - skin effect is less critical.">AWG
+                    data-tip="Wire gauge for the bias winding. Auto selects based on I_bias_max.">AWG
                     bias</label>
                   <select id="AWG_bias">
                     <option value="auto">Auto</option>
@@ -437,9 +437,15 @@
 
         <!-- Core geometry diagram -->
         <div class="panel" style="margin-bottom:16px;">
-          <div class="panel-header">Core Geometry</div>
-          <div class="svg-core-wrapper" id="svg-core-container">
-            <!-- SVG injected inline by JS after calculation -->
+          <div class="panel-header">Core Geometry — Symbol reference</div>
+          <div class="svg-core-wrapper" id="svg-core-ref">
+            <!-- SVG (labels as symbols) injected by JS -->
+          </div>
+        </div>
+        <div class="panel" style="margin-bottom:16px;">
+          <div class="panel-header">Core Geometry — Calculated values</div>
+          <div class="svg-core-wrapper" id="svg-core-values">
+            <!-- SVG (labels replaced with values) injected by JS -->
           </div>
         </div>
 
@@ -547,13 +553,13 @@
         ? Math.ceil(L_nom * I_pk / (B_max * Ae))
         : null;
 
-      // Suggested lg from current N_main input (linear: lg = μ₀ × kf × N² × Ae / L_nom, in mm)
+      // Suggested lg from current N_main input (linear: lg = μ₀ x kf x N² x Ae / L_nom, in mm)
       function lgSugFromN(N) {
         if (!isFinite(N) || N < 1 || !isFinite(L_nom) || L_nom <= 0 || !isFinite(Ae) || Ae <= 0) return null;
         return MU_0 * kf * N * N * Ae / L_nom * 1e3;  // mm
       }
 
-      // Suggested N from current lg_center input (linear: N = ceil(sqrt(L_nom * lg / (μ₀ × kf × Ae))))
+      // Suggested N from current lg_center input (linear: N = ceil(sqrt(L_nom * lg / (μ₀ x kf x Ae))))
       function NSugFromLg(lg_mm) {
         const lg = lg_mm * 1e-3;
         if (!isFinite(lg) || lg <= 0 || !isFinite(L_nom) || L_nom <= 0 || !isFinite(Ae) || Ae <= 0) return null;
@@ -809,9 +815,10 @@
         Math.abs(design.L_nom_achieved_uH - design.L_main_nom_uH) < 0.5);
       row("L_min (target)", fmt(design.L_main_min_uH, 1), "μH");
       row("L_min (achieved)", fmt(design.L_ac_at_bias_uH, 2), "μH");
-      row("N_bias", design.N_bias, "turns");
-      row("N_cond_main", `${design.N_cond_main} × AWG ${design.AWG_main}`, "-");
-      row("N_cond_bias", `${design.N_cond_bias} × AWG ${design.AWG_bias}`, "-");
+      row("N_bias (per leg)", design.N_bias, "turns");
+      row("N_bias (total)", design.N_bias * 2, "turns");
+      row("N_cond_main", `${design.N_cond_main} x AWG ${design.AWG_main}`, "-");
+      row("N_cond_bias", `${design.N_cond_bias} x AWG ${design.AWG_bias}`, "-");
       row("k_w main", `${fmt(design.kw_req_main * 100, 1)}%`, "",
         design.kw_req_main <= design.kw_max);
       row("k_w bias", `${fmt(design.kw_req_bias * 100, 1)}%`, "",
@@ -837,8 +844,8 @@
       function prepCanvas(id) {
         const canvas = document.getElementById(id);
         const card = canvas.parentElement;
-        const dispW = Math.max(card.clientWidth || 220, 80);
-        const dispH = Math.round(dispW * 1.2);
+        const dispW = Math.min(Math.max(card.clientWidth || 220, 100), 240);
+        const dispH = Math.round(dispW * 1.5);
         canvas.style.width = dispW + "px";
         canvas.style.height = dispH + "px";
         canvas.width = Math.round(dispW * dpr);
@@ -858,14 +865,14 @@
         "", prepCanvas("canvas-main")
       );
 
-      // Bias winding (per leg = N_bias/2 turns)
-      const titleBias = `Bias/leg: ${Math.floor(design.N_bias / 2)}T x ${design.N_cond_bias} x AWG${design.AWG_bias}`;
+      // Bias winding (N_bias turns per leg)
+      const titleBias = `Bias/leg: ${design.N_bias}T x ${design.N_cond_bias} x AWG${design.AWG_bias}`;
       document.getElementById("ww-bias-label").textContent = titleBias;
       drawWindingWindow(
         "canvas-bias",
         design.CF_W_mm, design.CF_L_mm,
         design.S_bias_total_mm2 * 1e-6,
-        Math.floor(design.N_bias / 2), design.N_cond_bias,
+        design.N_bias, design.N_cond_bias,
         design.thickness_mm, design.spacing_mm,
         "", prepCanvas("canvas-bias")
       );
@@ -956,34 +963,62 @@
           // Winding windows
           updateWindingWindows(design);
 
-          // Core geometry SVG - fetch and inject inline for full rendering fidelity
+          // Core geometry SVG — shown twice: symbol reference + calculated values
           const svgFile = design.coil_length === "full"
             ? "assets/Core_Geometry_Full.svg"
             : "assets/Core_Geometry_Half.svg";
-          const svgContainer = document.getElementById("svg-core-container");
-          svgContainer.innerHTML = '<span style="color:#aaa;font-size:11px;padding:12px;display:block;">Loading diagram…</span>';
-          fetch(svgFile)
-            .then(r => { if (!r.ok) throw new Error(r.statusText); return r.text(); })
-            .then(svgText => {
-              // DOMParser handles <?xml?> and <!DOCTYPE> correctly; innerHTML does not
-              const parser = new DOMParser();
-              const doc = parser.parseFromString(svgText, "image/svg+xml");
-              const err = doc.querySelector("parsererror");
-              if (err) throw new Error("SVG parse error: " + err.textContent);
-              const svg = doc.documentElement;
-              svg.style.maxWidth = "100%";
-              svg.style.height = "auto";
-              svg.style.colorScheme = "light";        // prevent dark-mode color inversion
-              svg.style.background = "#fff";
-              svg.removeAttribute("width");
-              svg.removeAttribute("height");
-              svgContainer.innerHTML = "";
-              svgContainer.appendChild(document.adoptNode(svg));
-            })
-            .catch(e => {
-              svgContainer.innerHTML = '<span style="color:#aaa;font-size:11px;padding:12px;display:block;">Core geometry diagram unavailable.</span>';
-              console.warn("SVG load failed:", e);
-            });
+
+          // Label → value substitution map (matches Python _svg_values)
+          const svgValues = {
+            "le_h": `${(design.le_h_m * 1e3).toFixed(2)} mm`,
+            "le_outer": `${(design.le_outer_m * 1e3).toFixed(2)} mm`,
+            "le_center": `${(design.le_center_m * 1e3).toFixed(2)} mm`,
+            "lg_center": `${design.lg_center_mm.toFixed(3)} mm`,
+            "lg_outer": `${design.lg_outer_mm.toFixed(3)} mm`,
+            "Ae_outer": `${(design.Ae_outer_m2 * 1e6).toFixed(2)} mm²`,
+            "Ae_center": `${(design.Ae_center_m2 * 1e6).toFixed(2)} mm²`,
+            "Ae_h": `${(design.Ae_h_m2 * 1e6).toFixed(2)} mm²`,
+            "Aw": `${(design.Aw_m2 * 1e6).toFixed(2)} mm²`,
+            "thickness": `${design.thickness_mm.toFixed(2)} mm`,
+            "spacing": `${design.spacing_mm.toFixed(2)} mm`,
+          };
+
+          function injectSvg(container, replacements) {
+            container.innerHTML = '<span style="color:#aaa;font-size:11px;padding:12px;display:block;">Loading…</span>';
+            fetch(svgFile)
+              .then(r => { if (!r.ok) throw new Error(r.statusText); return r.text(); })
+              .then(svgText => {
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(svgText, "image/svg+xml");
+                const err = doc.querySelector("parsererror");
+                if (err) throw new Error("SVG parse error");
+                const svg = doc.documentElement;
+
+                // Substitute text labels if replacements provided
+                if (replacements) {
+                  svg.querySelectorAll("text").forEach(el => {
+                    const key = el.textContent.trim();
+                    if (replacements[key] !== undefined) el.textContent = replacements[key];
+                  });
+                }
+
+                svg.style.maxWidth = "100%";
+                svg.style.height = "auto";
+                svg.style.colorScheme = "light";
+                svg.style.background = "#fff";
+                svg.removeAttribute("width");
+                svg.removeAttribute("height");
+                container.innerHTML = "";
+                container.appendChild(document.adoptNode(svg));
+              })
+              .catch(e => {
+                container.innerHTML = '<span style="color:#aaa;font-size:11px;padding:12px;display:block;">Core geometry diagram unavailable.</span>';
+                console.warn("SVG load failed:", e);
+              });
+          }
+
+          injectSvg(document.getElementById("svg-core-ref"), null);
+          injectSvg(document.getElementById("svg-core-values"), svgValues);
 
         } catch (e) {
           errorDiv.textContent = "Calculation error: " + e.message;

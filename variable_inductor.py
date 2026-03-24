@@ -3,7 +3,7 @@ variable_inductor.py - Variable inductor design tool (interactive console)
 
 Topology: E-core with multi-bobbin 3D-printed coil formers
   · Centre leg  -> ac inductor winding (N_main turns)
-  · Outer legs  -> bias winding (N_bias / 2 turns each, series-aiding)
+  · Outer legs  -> bias winding (N_bias turns each, series-aiding)
 
 Air-gap conventions
 -------------------
@@ -766,7 +766,7 @@ def run_interactive():
     print()
 
     # -- 11. Bias winding design -----------------------------------------------
-    _sec("11 · Bias winding design (Both outer windings combined)")
+    _sec("11 · Bias winding design (per outer bobbin)")
     print(
         f"  Target: L_main = {L_main_min_uH} uH  @ I_bias_max = {I_bias_max_A} A, "
         f"I_ac = I_pk = {I_main_pk_A} A"
@@ -809,8 +809,6 @@ def run_interactive():
     try:
         N_bias_cont = brentq(_f_Nbias, 2, 500, xtol=0.5)
         N_bias_calc = int(round(N_bias_cont))
-        if N_bias_calc % 2 != 0:
-            N_bias_calc += 1
         _, L_tgt_chk = _solve_Bac_full(
             I_bias_max_A,
             I_main_pk_A,
@@ -841,10 +839,7 @@ def run_interactive():
         N_bias_calc = 60
         print(f"  Warning: N_bias solver failed - Enter manually.")
 
-    N_bias = _ask("Choose N_bias (total turns, even)", N_bias_calc, int)
-    if N_bias % 2 != 0:
-        N_bias += 1
-        print(f"  Rounded to even: N_bias = {N_bias}")
+    N_bias = _ask("Choose N_bias (turns per outer bobbin)", N_bias_calc, int)
 
     # Verify chosen N_bias
     _, L_bias_final = _solve_Bac_full(
@@ -881,8 +876,8 @@ def run_interactive():
     print(f"  Parallel conductors needed : {N_cond_bias_calc}")
     N_cond_bias = _ask("Choose parallel conductors (bias)", N_cond_bias_calc, int)
 
-    # Window check for bias winding (each outer leg: N_bias/2 turns)
-    Aw_used_bias = (N_bias / 2) * N_cond_bias * S_bias_total
+    # Window check for bias winding (N_bias turns per outer leg)
+    Aw_used_bias = N_bias * N_cond_bias * S_bias_total
     kw_req_bias = Aw_used_bias / Aw
 
     print()
@@ -920,9 +915,9 @@ def run_interactive():
     wire_len_main = N_main * N_cond_main * lt_center
     wire_R_main = R_CU * N_main * lt_center / (S_main_Cu * N_cond_main)
 
-    # DC winding resistance
-    wire_len_bias = N_bias * N_cond_bias * lt_outer
-    wire_R_bias = R_CU * N_bias * lt_outer / (S_bias_Cu * N_cond_bias)
+    # DC winding resistance (both outer legs in series)
+    wire_len_bias = 2 * N_bias * N_cond_bias * lt_outer
+    wire_R_bias = R_CU * 2 * N_bias * lt_outer / (S_bias_Cu * N_cond_bias)
 
     # -- Print results ---------------------------------------------------------
     _hdr("RESULTS")
@@ -967,7 +962,7 @@ def run_interactive():
         ("Core", core_name),
         ("N_main", f"{N_main} turns"),
         ("N_cond_main", f"{N_cond_main} x AWG {AWG_main}"),
-        ("N_bias", f"{N_bias} turns"),
+        ("N_bias", f"{N_bias} turns per outer bobbin"),
         ("N_cond_bias", f"{N_cond_bias} x AWG {AWG_bias}"),
         ("lg_center", f"{lg_center_mm} mm"),
         ("lg_outer", f"{lg_outer_mm} mm"),
@@ -1467,8 +1462,8 @@ def generate_report(
     data = rows_to_para(
         [
             ["Parameter", "Symbol", "Value", "Unit"],
-            ["Total turns", "N_bias", f"{d['N_bias']}", "-"],
-            ["Turns per outer leg", "N_bias/2", f"{d['N_bias'] // 2}", "-"],
+            ["Turns per outer bobbin", "N_bias", f"{d['N_bias']}", "-"],
+            ["Total turns (both legs)", "2·N_bias", f"{d['N_bias'] * 2}", "-"],
             ["AWG", "AWG_bias", f"{d['AWG_bias']}", "-"],
             ["Parallel conductors", "N_cond_bias", f"{d['N_cond_bias']}", "-"],
             [
@@ -1535,7 +1530,7 @@ def generate_report(
         max_cols_bias = int(CF_W_mm / d_bias_mm)
 
         total_ac = d["N_main"] * d["N_cond_main"]
-        total_bias = (d["N_bias"] // 2) * d["N_cond_bias"]
+        total_bias = d["N_bias"] * d["N_cond_bias"]
 
         layers_ac = ceil(total_ac / max(int(CF_L_mm / d_ac_mm), 1))
         layers_bias = ceil(total_bias / max(int(CF_L_mm / d_bias_mm), 1))
@@ -1546,7 +1541,7 @@ def generate_report(
             f"k<sub>w</sub> = {d['kw_req_main']*100:.1f}%"
         )
         label_bias = (
-            f"<b>Bias winding</b> (per leg) - {d['N_bias']//2}T ({d['N_cond_bias']} x AWG{d['AWG_bias']})<br/>"
+            f"<b>Bias winding</b> (per outer bobbin) - {d['N_bias']}T ({d['N_cond_bias']} x AWG{d['AWG_bias']})<br/>"
             f"{layers_bias} layer{'s' if layers_bias > 1 else ''}  -  "
             f"k<sub>w</sub> = {d['kw_req_bias']*100:.1f}%"
         )
@@ -1877,7 +1872,7 @@ def plot_dc_analysis(design, save_path, n_points=300):
 
     ax1.set_title(
         f"DC bias analysis - {design['core']}\n"
-        f"N_bias={design['N_bias']}, "
+        f"N_bias={design['N_bias']} (per leg), "
         f"lg_outer={design['lg_outer_mm']} mm",
         fontsize=10,
     )
@@ -2142,7 +2137,7 @@ def plot_ac_analysis(design, save_path, Iac_fractions=None, n_points=300):
     ax1.grid(True, linestyle="--", alpha=0.35)
     ax1.set_title(
         f"Main winding analysis - {design['core']}  "
-        f"(N_main={design['N_main']}, N_bias={design['N_bias']}, "
+        f"(N_main={design['N_main']}, N_bias={design['N_bias']} (per leg), "
         f"lg_c={design['lg_center_mm']} mm, lg_o={design['lg_outer_mm']} mm)",
         fontsize=9,
     )
@@ -2357,16 +2352,16 @@ if __name__ == "__main__":
     plt.close(fig_ww)
     print(f"  Saved -> {ww_ac_path}")
 
-    # For Bias, we use N_bias/2 (since it's per leg) and its specific wire data
+    # For Bias, N_bias is per leg (per outer bobbin)
     fig_bias = draw_winding_window(
         design["CF_W_mm"],
         design["CF_L_mm"],
         float(design["S_bias_total_mm2"]) * 1e-6,
-        int(design["N_bias"] / 2),
+        design["N_bias"],
         design["N_cond_bias"],
         design["thickness_mm"],
         design["spacing_mm"],
-        title=f"BIAS winding - {int(design['N_bias']/2)}Tx{design['N_cond_bias']}xAWG{design['AWG_bias']}",
+        title=f"BIAS winding (per leg) - {design['N_bias']}Tx{design['N_cond_bias']}xAWG{design['AWG_bias']}",
     )
     ww_bias_path = os.path.join(out_dir, "winding_window_bias.png")
     fig_bias.savefig(ww_bias_path, dpi=300, bbox_inches="tight")

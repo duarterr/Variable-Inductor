@@ -165,7 +165,7 @@ function calculate(inp) {
 
   // ── Solve N_bias ────────────────────────────────────────────────────────────
   // Lac(N_bias) is monotonically decreasing with N_bias.
-  // Find the smallest even integer N_bias such that Lac(I_bias_max) <= L_min.
+  // Find the smallest integer N_bias (turns per outer bobbin) such that Lac(I_bias_max) <= L_min.
   function lacAtN(N) {
     const [, Lac] = callBacFull(inp.I_bias_max_A, inp.I_main_pk_A, N, lg_center, N_main);
     return Lac;
@@ -173,8 +173,8 @@ function calculate(inp) {
 
   let N_bias;
   if (inp.N_bias_override != null && inp.N_bias_override >= 1) {
-    // User-specified per coil → total = 2 × per-coil
-    N_bias = inp.N_bias_override * 2;
+    // User-specified turns per outer bobbin
+    N_bias = inp.N_bias_override;
   } else {
     try {
       // Expand upper bracket until Lac(N_hi) <= L_min
@@ -182,24 +182,21 @@ function calculate(inp) {
       while (lacAtN(N_hi) > L_min && N_hi < 10000) N_hi *= 2;
       if (lacAtN(N_hi) > L_min) throw new Error("Cannot reach L_min within N_bias limit");
 
-      // Binary search: find smallest even N in [N_lo, N_hi] where Lac <= L_min
-      while (N_hi - N_lo > 2) {
-        let N_mid = Math.floor((N_lo + N_hi) / 2);
-        if (N_mid % 2 !== 0) N_mid += 1;
+      // Binary search: find smallest N in [N_lo, N_hi] where Lac <= L_min
+      while (N_hi - N_lo > 1) {
+        const N_mid = Math.floor((N_lo + N_hi) / 2);
         if (lacAtN(N_mid) > L_min) {
           N_lo = N_mid;
         } else {
           N_hi = N_mid;
         }
       }
-      // N_hi is the smallest even N where Lac <= L_min
-      N_bias = N_hi % 2 === 0 ? N_hi : N_hi + 1;
+      // N_hi is the smallest N where Lac <= L_min
+      N_bias = N_hi;
     } catch (e) {
-      N_bias = 60; // fallback
+      N_bias = 30; // fallback (per leg)
     }
   }
-  // Ensure even
-  if (N_bias % 2 !== 0) N_bias += 1;
 
   // ── Final operating point with chosen N_bias ───────────────────────────────
   const [, L_bias_final] = callBacFull(
@@ -252,7 +249,7 @@ function calculate(inp) {
   const N_cond_bias_auto = Math.max(1, Math.ceil(S_req_bias / S_bias_Cu));
   const N_cond_bias      = (inp.N_cond_bias != null) ? inp.N_cond_bias : N_cond_bias_auto;
 
-  const Aw_used_bias = (N_bias / 2) * N_cond_bias * S_bias_total;
+  const Aw_used_bias = N_bias * N_cond_bias * S_bias_total;
   const kw_req_bias  = Aw_used_bias / Aw;
 
   // ── Reluctance network at I_bias = 0 ──────────────────────────────────────
@@ -283,8 +280,8 @@ function calculate(inp) {
   const wire_len_main = N_main * N_cond_main * lt_center;
   const wire_R_main   = R_CU * N_main * lt_center / (S_main_Cu * N_cond_main);
 
-  const wire_len_bias = N_bias * N_cond_bias * lt_outer;
-  const wire_R_bias   = R_CU * N_bias * lt_outer / (S_bias_Cu * N_cond_bias);
+  const wire_len_bias = 2 * N_bias * N_cond_bias * lt_outer;         // both legs in series
+  const wire_R_bias   = R_CU * 2 * N_bias * lt_outer / (S_bias_Cu * N_cond_bias);
 
   // ── Current density ────────────────────────────────────────────────────────
   const J_main_Acm2 = (inp.I_main_rms_A / (S_main_Cu * N_cond_main)) * 1e-4;  // A/cm²
