@@ -71,7 +71,6 @@ from svglib.svglib import svg2rlg
 import re
 import tempfile
 
-
 # -----------------------------------------------------------------------------
 # DEFAULT VALUES
 # -----------------------------------------------------------------------------
@@ -268,7 +267,7 @@ def _ask_yn(prompt, default=True):
         print("    ✗  Please enter y or n.")
 
 
-def _pick_core(AeAw_rec_mm4=None):
+def _pick_core(AeAw_rec_mm4=None, coil_length="full"):
     """
     Show cores with AeAw info. If AeAw_rec_mm4 is given, mark which ones qualify
     and default to the smallest core that still meets the AeAw requirement.
@@ -318,7 +317,7 @@ def _pick_core(AeAw_rec_mm4=None):
         Ae_c_mm2 = core_W(n, "center") * core_H(n)
         Ae_o_mm2 = core_W(n, "outer") * core_H(n)
         Ae_h_mm2 = core_h_L(n) * core_H(n)
-        le_c_mm = core_L(n, "full") - core_h_L(n)
+        le_c_mm = core_L(n, coil_length) - core_h_L(n)
         le_h_mm = core_h_W(n)
         cfw_mm = coil_former_W(n, "half", SP, TH)
         cfl_mm = coil_former_L(n, "full", SP, TH)
@@ -479,7 +478,7 @@ def run_interactive():
     Ae_outer = Co_W * C_H * 1e-6
     Ae_h = Ch_L * C_H * 1e-6
 
-    le_center = (core_L(core_name, "full") - Ch_L) * 1e-3
+    le_center = (core_L(core_name, coil_length) - Ch_L) * 1e-3
     le_outer = le_center
     le_h = core_h_W(core_name) * 1e-3
 
@@ -588,11 +587,12 @@ def run_interactive():
             return Lac - L_nom
 
         # Verify sign change before calling brentq
+        _lg_max = min(20e-3, le_center - 1e-4)
         _L_lo = _solve_Bac_full(
             0.0, I_main_pk_A, 2, 1e-7, N_main, *_bac_core, **_bac_kf
         )[1]
         _L_hi = _solve_Bac_full(
-            0.0, I_main_pk_A, 2, 20e-3, N_main, *_bac_core, **_bac_kf
+            0.0, I_main_pk_A, 2, _lg_max, N_main, *_bac_core, **_bac_kf
         )[1]
         _sign_ok = (
             not np.isnan(_L_lo)
@@ -601,7 +601,7 @@ def run_interactive():
         )
 
         if _sign_ok:
-            lg_center = brentq(_f_lgc, 1e-7, 20e-3, xtol=1e-10)
+            lg_center = brentq(_f_lgc, 1e-7, _lg_max, xtol=1e-10)
             lg_center_mm = round(lg_center * 1e3, 4)
             _, L_nom_chk = _solve_Bac_full(
                 0.0, I_main_pk_A, 2, lg_center, N_main, *_bac_core, **_bac_kf
@@ -611,7 +611,7 @@ def run_interactive():
             )
         else:
             print(
-                f"  Debug: L(lgc=0.001mm)={_L_lo*1e6:.1f}uH  L(lgc=20mm)={_L_hi*1e6:.1f}uH"
+                f"  Debug: L(lgc=0.001mm)={_L_lo*1e6:.1f}uH  L(lgc={_lg_max*1e3:.1f}mm)={_L_hi*1e6:.1f}uH"
             )
             print(f"  L_nom={L_nom*1e6:.1f}uH - check N_main and core size.")
             lg_center_mm = _ask(

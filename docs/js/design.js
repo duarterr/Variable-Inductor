@@ -40,7 +40,9 @@ function calculate(inp) {
   const Ae_outer  = Co_W * C_H * 1e-6;           // m²
   const Ae_h      = Ch_L * C_H * 1e-6;           // m²
 
-  const le_center = (coreL(core_name, "full") - Ch_L) * 1e-3;  // m
+  const le_center = (inp.coil_length === "half"
+    ? coreL(core_name, "half")
+    : coreL(core_name, "full") - Ch_L) * 1e-3;  // m
   const le_outer  = le_center;                                   // m  (same path)
   const le_h      = coreHW(core_name) * 1e-3;                   // m
 
@@ -99,21 +101,22 @@ function calculate(inp) {
       return Lac - L_nom;
     }
 
+    const lg_max = Math.min(20e-3, le_center - 1e-4);
     const _L_lo = callBacFull(0.0, inp.I_main_pk_A, 2, 1e-7, N_main)[1];
-    const _L_hi = callBacFull(0.0, inp.I_main_pk_A, 2, 20e-3, N_main)[1];
+    const _L_hi = callBacFull(0.0, inp.I_main_pk_A, 2, lg_max, N_main)[1];
     const signOk = !isNaN(_L_lo) && !isNaN(_L_hi) && (_L_lo - L_nom) * (_L_hi - L_nom) < 0;
 
     if (!signOk) {
       throw new Error(
         `Cannot bracket lg_center for N_main=${N_main}. ` +
         `L(lgc=0.1mm)=${(_L_lo*1e6).toFixed(1)}uH, ` +
-        `L(lgc=20mm)=${(_L_hi*1e6).toFixed(1)}uH, ` +
+        `L(lgc=${(lg_max*1e3).toFixed(1)}mm)=${(_L_hi*1e6).toFixed(1)}uH, ` +
         `target=${(L_nom*1e6).toFixed(1)}uH. ` +
         `Check N_main and core size.`
       );
     }
 
-    lg_center    = brentq(f_lgc, 1e-7, 20e-3, 1e-10, 300);
+    lg_center    = brentq(f_lgc, 1e-7, lg_max, 1e-10, 300);
     lg_center_mm = lg_center * 1e3;
 
   // ── Mode 3: both N_main and lg_center fixed — compute L directly ──────────
